@@ -1,0 +1,86 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function hasRole(role) {
+      return signedIn() &&
+        userProfile().data.role == role;
+    }
+
+    function isManagerOrAdmin() {
+      return hasRole('manager') ||
+        hasRole('admin') ||
+        hasRole('ceo');
+    }
+
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function validLocationPayload(userId) {
+      return request.resource.data.userId == userId &&
+        request.resource.data.latitude is number &&
+        request.resource.data.longitude is number &&
+        request.resource.data.recordedAt is timestamp &&
+        request.resource.data.sessionId is string &&
+        request.resource.data.trackingReason is string &&
+        request.resource.data.status is string;
+    }
+
+    function validLocationStatusPayload(userId) {
+      return request.resource.data.userId == userId &&
+        request.resource.data.sessionId is string &&
+        request.resource.data.trackingReason is string &&
+        request.resource.data.status is string &&
+        request.resource.data.updatedAt is timestamp;
+    }
+
+    match /live_locations/{userId} {
+      allow read: if isSelf(userId) || isManagerOrAdmin();
+      allow create, update: if isSelf(userId) &&
+        (
+          validLocationPayload(userId) ||
+          validLocationStatusPayload(userId)
+        );
+      allow delete: if false;
+    }
+
+    match /location_sessions/{sessionId} {
+      allow read: if isSelf(resource.data.userId) || isManagerOrAdmin();
+      allow create: if isSelf(request.resource.data.userId) &&
+        request.resource.data.status == 'active';
+      allow update: if isSelf(resource.data.userId) &&
+        request.resource.data.userId == resource.data.userId;
+      allow delete: if false;
+
+      match /points/{pointId} {
+        allow read: if isSelf(resource.data.userId) || isManagerOrAdmin();
+        allow create: if isSelf(request.resource.data.userId) &&
+          request.resource.data.sessionId == sessionId &&
+          request.resource.data.latitude is number &&
+          request.resource.data.longitude is number &&
+          request.resource.data.recordedAt is timestamp;
+        allow update, delete: if false;
+      }
+    }
+
+    match /location_permissions/{userId} {
+      allow read, create, update: if isSelf(userId);
+      allow delete: if false;
+    }
+
+    match /location_events/{eventId} {
+      allow read: if isSelf(resource.data.userId) || isManagerOrAdmin();
+      allow create: if isSelf(request.resource.data.userId);
+      allow update, delete: if false;
+    }
+  }
+}

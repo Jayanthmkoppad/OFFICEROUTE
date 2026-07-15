@@ -1,0 +1,99 @@
+{
+  "project_info": {
+    "project_number": "131809757105",
+    "firebase_url": "https://officeroute-96b30-default-rtdb.asia-southeast1.firebasedatabase.app",
+    "project_id": "officeroute-96b30",
+    "storage_bucket": "officeroute-96b30.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:131809757105:android:be45e50bf4155aabce5f90",
+        "android_client_info": {
+          "package_name": "com.example.officeroute"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "131809757105-ubfc6sbq3ot02cfrp9sht63hqugpaukc.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.officeroute",
+            "certificate_hash": "e5a1ed0327acf03dc3ac1366250b613af29ea9dd"
+          }
+        },
+        {
+          "client_id": "131809757105-v33visk6rboqeqafb06fdr8cp7fsa2p8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC0twUhPfkynJW4dxVaNHsv6LA3nw5QF3k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "131809757105-v33visk6rboqeqafb06fdr8cp7fsa2p8.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "131809757105-mocv6cgen5ocdq1g6lu7mpf8j5a6q916.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.officeroute.app"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:131809757105:android:fc38d6b64b7a60c8ce5f90",
+        "android_client_info": {
+          "package_name": "com.officeroute.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "131809757105-tb2rkusnjq1u4tntrq14gonl4q2kne9i.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.officeroute.app",
+            "certificate_hash": "9bbb3186b2189ef16d8f272bdab59362c395cbb4"
+          }
+        },
+        {
+          "client_id": "131809757105-v33visk6rboqeqafb06fdr8cp7fsa2p8.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC0twUhPfkynJW4dxVaNHsv6LA3nw5QF3k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "131809757105-v33visk6rboqeqafb06fdr8cp7fsa2p8.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "131809757105-mocv6cgen5ocdq1g6lu7mpf8j5a6q916.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.officeroute.app"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
