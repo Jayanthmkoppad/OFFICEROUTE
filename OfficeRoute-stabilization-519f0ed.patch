@@ -1,0 +1,1101 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 3d6c8d5e4ee89a00085f11ffc558b74d93708f61..f9315f56fbee16766a4ac17268916da513018e9e 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -1,5 +1,33 @@
+ # CHANGELOG
+ 
++## 2026-07-18
++
++### Application Stabilization
++
++Fixed:
++
++- Start Duty now uses only field-duty sessions, rejects already-completed attendance days, verifies the first GPS/Firestore update, and surfaces the underlying failure message.
++- Map mode selection and action panels are isolated by user role; Administrator users no longer receive Service Engineer duty or visit controls.
++- Cab-management permissions now derive from the user role instead of unconditional `true` values, and non-manager users can no longer inherit an unrelated manager assignment.
++- Full-map refreshes no longer replace the GoogleMap with a loading state; realtime refreshes are debounced and prevented from overlapping.
++- Live-location writes are serialized to prevent out-of-order history sequence updates and duplicate concurrent writes.
++- Realtime listeners are scoped to the active mode and, where possible, the signed-in user or current date.
++- Shared dark theme coverage now includes Material color scheme, cards, dividers, inputs, dialogs, popup menus, bottom sheets, snackbars, navigation, and floating actions.
++- Administrator Map KPI tiles now respond to available width and use consistent monochrome styling.
++
++Preserved:
++
++- Existing navigation, controllers, services, models, Firestore collection names, and business workflows.
++- No new business module or architecture was introduced.
++
++Validation:
++
++- `git diff --check`: passed.
++- `flutter clean`: passed.
++- `flutter pub get`: passed with the existing locked dependency versions.
++- `flutter analyze`: no issues found.
++- `flutter test`: all 16 tests passed.
++
+ ## 2026-07-12
+ 
+ ### Map UI Foundation Complete
+diff --git a/PROJECT_STATUS.md b/PROJECT_STATUS.md
+index 831fb83447471fea0efe6aed846ea2b77e2cb14d..197112388bfa485ceee3cbbd1275fc849da37632 100644
+--- a/PROJECT_STATUS.md
++++ b/PROJECT_STATUS.md
+@@ -1,5 +1,33 @@
+ # PROJECT STATUS
+ 
++## 2026-07-18 - Stabilization Sprint
++
++Completed:
++
++- Isolated Map modes by signed-in role so Administrator, Driver, Employee, and Service Engineer users only receive their permitted controls.
++- Removed the unsafe cab-management defaults that granted every role manager capabilities and exposed the first manager assignment to unassigned users.
++- Fixed Start Duty session selection so field duty cannot reuse cab-trip or pickup location sessions.
++- Made Start Duty wait for an actual GPS fix and successful first live-location/history writes before reporting success.
++- Prevented a completed attendance record from being silently reused as a successful new check-in.
++- Preserved the GoogleMap during refreshes, debounced realtime changes, blocked overlapping refreshes, narrowed mode listeners, and serialized live-location writes.
++- Completed the shared dark Nothing OS theme for cards, fields, dialogs, menus, sheets, snackbars, dividers, navigation, and floating actions.
++- Made Map KPI tiles responsive and standardized administrator map surfaces, status colors, spacing, and contrast.
++- Audited timers, animation controllers, text controllers, subscriptions, mounted checks, and disposal paths in the current application.
++
++Validation status:
++
++- Repository whitespace/patch validation passes with `git diff --check`.
++- `flutter clean` and `flutter pub get` pass with the existing locked dependency versions.
++- `flutter analyze` reports no issues.
++- `flutter test` passes all 16 tests.
++
++Remaining production blockers:
++
++- Firestore security rules are not present in this repository or referenced by `firebase.json`.
++- Google Maps rendering still depends on valid Google Cloud billing, enabled Maps SDKs, API-key restrictions, and device verification.
++- Background location, device battery optimization behavior, and platform permission flows require physical-device validation.
++- Global offline/retry UX is not uniformly implemented; adding it is a separate production feature and was outside this no-new-features sprint.
++
+ ## Current Status
+ 
+ ### Completed
+diff --git a/lib/core/services/live_location_service.dart b/lib/core/services/live_location_service.dart
+index b765a42fce9ac2087d98dfe53bfea72c82ecc7db..4bdebd2deaebd641c169e4e7807c598347f1d18a 100644
+--- a/lib/core/services/live_location_service.dart
++++ b/lib/core/services/live_location_service.dart
+@@ -53,6 +53,35 @@ class LiveLocationService {
+     LiveLocationModel? lastLiveLocation;
+     LiveLocationModel? lastHistoryLocation;
+     var historySequence = 0;
++    var pendingWrite = Future<void>.value();
++
++    final initialPosition = await Geolocator.getCurrentPosition(
++      locationSettings: const LocationSettings(
++        accuracy: LocationAccuracy.best,
++      ),
++    );
++    final initialLocation = LiveLocationModel.fromPosition(
++      userId: session.userId,
++      sessionId: session.id,
++      trackingReason: session.trackingReason,
++      status: LocationTrackingPolicy.statusActive,
++      position: initialPosition,
++      isForeground: true,
++    );
++    await _processForegroundLocation(
++      location: initialLocation,
++      historySequence: historySequence,
++      previousLiveLocation: lastLiveLocation,
++      previousHistoryLocation: lastHistoryLocation,
++      onLiveLocationAccepted: (acceptedLocation) {
++        lastLiveLocation = acceptedLocation;
++        onLocation?.call(acceptedLocation);
++      },
++      onHistoryLocationAccepted: (acceptedLocation) {
++        lastHistoryLocation = acceptedLocation;
++        historySequence += 1;
++      },
++    );
+ 
+     return foregroundLocationStream(
+       userId: session.userId,
+@@ -62,8 +91,8 @@ class LiveLocationService {
+           LocationTrackingPolicy.minimumLiveDistanceMeters.round(),
+     ).listen(
+       (location) {
+-        unawaited(
+-          _processForegroundLocation(
++        pendingWrite = pendingWrite.then(
++          (_) => _processForegroundLocation(
+             location: location,
+             historySequence: historySequence,
+             previousLiveLocation: lastLiveLocation,
+@@ -77,6 +106,11 @@ class LiveLocationService {
+               historySequence += 1;
+             },
+           ),
++        ).catchError((Object error, StackTrace stackTrace) {
++          onError?.call(error, stackTrace);
++        });
++        unawaited(
++          pendingWrite,
+         );
+       },
+       onError: (Object error, StackTrace stackTrace) {
+@@ -193,6 +227,7 @@ class LiveLocationService {
+         stackTrace: stackTrace,
+         method: 'LiveLocationService._processForegroundLocation',
+       );
++      rethrow;
+     }
+   }
+ 
+diff --git a/lib/core/services/location_session_service.dart b/lib/core/services/location_session_service.dart
+index 736da13c439155cd4ffed9b957d783636f342b93..fb6030ce8853098750f13c1453b8003a745ccf20 100644
+--- a/lib/core/services/location_session_service.dart
++++ b/lib/core/services/location_session_service.dart
+@@ -41,15 +41,21 @@ class LocationSessionService {
+   }
+ 
+   static Future<LocationSessionModel?> fetchActiveSessionForUser(
+-    String userId,
+-  ) async {
++    String userId, {
++    String? trackingReason,
++  }) async {
+     try {
+       final snapshot = await _collection
+           .where('userId', isEqualTo: userId)
+           .get();
+       final sessions = snapshot.docs
+           .map((doc) => LocationSessionModel.fromMap(doc.data(), id: doc.id))
+-          .where((session) => session.isActive || session.isPaused)
++          .where(
++            (session) =>
++                (session.isActive || session.isPaused) &&
++                (trackingReason == null ||
++                    session.trackingReason == trackingReason),
++          )
+           .toList();
+       if (sessions.isEmpty) return null;
+       sessions.sort((left, right) => right.startedAt.compareTo(left.startedAt));
+@@ -69,6 +75,14 @@ class LocationSessionService {
+     return _collection.snapshots().map<void>((_) {});
+   }
+ 
++  /// Emits only when tracking sessions for one user change.
++  static Stream<void> watchSessionsForUser(String userId) {
++    return _collection
++        .where('userId', isEqualTo: userId)
++        .snapshots()
++        .map<void>((_) {});
++  }
++
+   static Future<LocationSessionModel> pauseSession(
+     LocationSessionModel session,
+   ) {
+diff --git a/lib/core/theme/app_colors.dart b/lib/core/theme/app_colors.dart
+index d6357c31fd627d2afa2ff1789eb4396a0168ce03..7a45419dc6becee7f23b66e12dd4686adc3f7afe 100644
+--- a/lib/core/theme/app_colors.dart
++++ b/lib/core/theme/app_colors.dart
+@@ -25,6 +25,8 @@ class AppColors {
+ 
+   static const Color surface = Color(0xFF121212);
+   static const Color card = Color(0xFF181818);
++  static const Color surfaceMuted = Color(0xFF0B0B0B);
++  static const Color surfaceRaised = Color(0xFF202020);
+ 
+   // -----------------------------------------------------------------
+   // Text Colors
+@@ -40,6 +42,7 @@ class AppColors {
+ 
+   static const Color border = Color(0xFF2A2A2A);
+   static const Color divider = Color(0xFF2F2F2F);
++  static const Color overlay = Color(0xF20B0B0B);
+ 
+   // -----------------------------------------------------------------
+   // Status Colors
+diff --git a/lib/core/theme/app_theme.dart b/lib/core/theme/app_theme.dart
+index c1aaca0cf9b63499d3be3c5b2e13ae1e1557a6c2..35ac5edef72a7ced758100eebdb64f91f164998f 100644
+--- a/lib/core/theme/app_theme.dart
++++ b/lib/core/theme/app_theme.dart
+@@ -16,6 +16,9 @@ class AppTheme {
+     colorScheme: const ColorScheme.dark(
+       primary: AppColors.primary,
+       surface: AppColors.surface,
++      onPrimary: AppColors.background,
++      onSurface: AppColors.textPrimary,
++      outline: AppColors.border,
+       error: AppColors.error,
+     ),
+ 
+@@ -27,7 +30,22 @@ class AppTheme {
+     ),
+ 
+     cardColor: AppColors.card,
++    cardTheme: CardThemeData(
++      color: AppColors.card,
++      surfaceTintColor: AppColors.transparent,
++      elevation: 0,
++      margin: EdgeInsets.zero,
++      shape: RoundedRectangleBorder(
++        borderRadius: BorderRadius.circular(18),
++        side: const BorderSide(color: AppColors.border),
++      ),
++    ),
+     dividerColor: AppColors.divider,
++    dividerTheme: const DividerThemeData(
++      color: AppColors.divider,
++      thickness: 1,
++      space: 1,
++    ),
+ 
+     iconTheme: const IconThemeData(
+       color: AppColors.primary,
+@@ -55,5 +73,82 @@ class AppTheme {
+         ),
+       ),
+     ),
++    inputDecorationTheme: InputDecorationTheme(
++      filled: true,
++      fillColor: AppColors.surface,
++      hintStyle: AppTextStyles.bodyMedium.copyWith(
++        color: AppColors.textDisabled,
++      ),
++      labelStyle: AppTextStyles.bodyMedium.copyWith(
++        color: AppColors.textSecondary,
++      ),
++      prefixIconColor: AppColors.textSecondary,
++      suffixIconColor: AppColors.textSecondary,
++      border: OutlineInputBorder(
++        borderRadius: BorderRadius.circular(16),
++        borderSide: const BorderSide(color: AppColors.border),
++      ),
++      enabledBorder: OutlineInputBorder(
++        borderRadius: BorderRadius.circular(16),
++        borderSide: const BorderSide(color: AppColors.border),
++      ),
++      focusedBorder: OutlineInputBorder(
++        borderRadius: BorderRadius.circular(16),
++        borderSide: const BorderSide(color: AppColors.textPrimary),
++      ),
++      errorBorder: OutlineInputBorder(
++        borderRadius: BorderRadius.circular(16),
++        borderSide: const BorderSide(color: AppColors.error),
++      ),
++    ),
++    dialogTheme: DialogThemeData(
++      backgroundColor: AppColors.surface,
++      surfaceTintColor: AppColors.transparent,
++      titleTextStyle: AppTextStyles.headingSmall,
++      contentTextStyle: AppTextStyles.bodyMedium,
++      shape: RoundedRectangleBorder(
++        borderRadius: BorderRadius.circular(22),
++        side: const BorderSide(color: AppColors.border),
++      ),
++    ),
++    popupMenuTheme: PopupMenuThemeData(
++      color: AppColors.overlay,
++      surfaceTintColor: AppColors.transparent,
++      textStyle: AppTextStyles.bodyMedium,
++      shape: RoundedRectangleBorder(
++        borderRadius: BorderRadius.circular(18),
++        side: const BorderSide(color: AppColors.border),
++      ),
++    ),
++    bottomSheetTheme: const BottomSheetThemeData(
++      backgroundColor: AppColors.surfaceMuted,
++      modalBackgroundColor: AppColors.surfaceMuted,
++      surfaceTintColor: AppColors.transparent,
++      showDragHandle: true,
++      dragHandleColor: AppColors.textDisabled,
++    ),
++    snackBarTheme: SnackBarThemeData(
++      backgroundColor: AppColors.surfaceRaised,
++      contentTextStyle: AppTextStyles.bodyMedium,
++      actionTextColor: AppColors.textPrimary,
++      behavior: SnackBarBehavior.floating,
++      elevation: 0,
++      shape: RoundedRectangleBorder(
++        borderRadius: BorderRadius.circular(14),
++        side: const BorderSide(color: AppColors.border),
++      ),
++    ),
++    bottomNavigationBarTheme: const BottomNavigationBarThemeData(
++      backgroundColor: AppColors.surfaceMuted,
++      selectedItemColor: AppColors.textPrimary,
++      unselectedItemColor: AppColors.textDisabled,
++      elevation: 0,
++      type: BottomNavigationBarType.fixed,
++    ),
++    floatingActionButtonTheme: const FloatingActionButtonThemeData(
++      backgroundColor: AppColors.textPrimary,
++      foregroundColor: AppColors.background,
++      elevation: 0,
++    ),
+   );
+-}
+\ No newline at end of file
++}
+diff --git a/lib/features/attendance/services/attendance_service.dart b/lib/features/attendance/services/attendance_service.dart
+index 81f4ae6871a01a8e298eac0d05ea409d0493588b..d0dda8182d8a01c029617e737015709cb2dcf848 100644
+--- a/lib/features/attendance/services/attendance_service.dart
++++ b/lib/features/attendance/services/attendance_service.dart
+@@ -109,6 +109,12 @@ class AttendanceService {
+       final existing = await _fetchAttendanceForDay(userId, todayDate);
+ 
+       if (existing != null) {
++        if (existing.isCheckedOut) {
++          throw StateError(
++            'Today\'s duty is already complete. Attendance cannot be restarted '
++            'after check-out.',
++          );
++        }
+         return existing;
+       }
+ 
+diff --git a/lib/features/map/controllers/location_controller.dart b/lib/features/map/controllers/location_controller.dart
+index b748dd306d9f3228766ccfd20d0593be039dd73f..c3b97102a5c83ccc8af35cf5cdad353c590abd75 100644
+--- a/lib/features/map/controllers/location_controller.dart
++++ b/lib/features/map/controllers/location_controller.dart
+@@ -37,9 +37,13 @@ class LocationController {
+   }
+ 
+   static Future<LocationSessionModel?> loadActiveLocationSession(
+-    String userId,
+-  ) {
+-    return LocationSessionService.fetchActiveSessionForUser(userId);
++    String userId, {
++    String? trackingReason,
++  }) {
++    return LocationSessionService.fetchActiveSessionForUser(
++      userId,
++      trackingReason: trackingReason,
++    );
+   }
+ 
+   static Future<LocationSessionModel> pauseLocationSession(
+diff --git a/lib/features/map/controllers/map_modes_controller.dart b/lib/features/map/controllers/map_modes_controller.dart
+index b6e1e72ca56af65f3ee85ea3da7d849a68561812..1a848d4b9bd378a38970e878a52b737b59919180 100644
+--- a/lib/features/map/controllers/map_modes_controller.dart
++++ b/lib/features/map/controllers/map_modes_controller.dart
+@@ -45,22 +45,52 @@ class MapModesController {
+   }
+ 
+   /// Realtime change signals used by Cab Tracking.
+-  static List<Stream<void>> cabChangeStreams() => operationalChangeStreams();
++  static List<Stream<void>> cabChangeStreams() {
++    final dateKey = dateKeyFromDate(DateTime.now());
++    return <Stream<void>>[
++      CabAssignmentService.watchAssignmentsForDate(dateKey),
++      CabAssignmentService.watchMembersForDate(dateKey),
++      CabTripService.watchTripsForDate(dateKey),
++      LiveLocationService.watchLiveLocationChanges(),
++      LocationSessionService.watchSessionChanges(),
++    ];
++  }
+ 
+   /// Realtime change signals used by Team Tracking.
+-  static List<Stream<void>> teamChangeStreams() => operationalChangeStreams();
++  static List<Stream<void>> teamChangeStreams() {
++    return <Stream<void>>[
++      AttendanceService.watchAttendanceChanges(),
++      CustomerVisitService.watchVisitChanges(),
++      LiveLocationService.watchLiveLocationChanges(),
++    ];
++  }
+ 
+   /// Realtime change signals used by Customer Locations.
+-  static List<Stream<void>> customerChangeStreams() =>
+-      operationalChangeStreams();
++  static List<Stream<void>> customerChangeStreams() {
++    final uid = AuthService.currentUser?.uid;
++    return <Stream<void>>[
++      if (uid == null)
++        CustomerVisitService.watchVisitChanges()
++      else
++        CustomerVisitService.watchVisitsForUser(uid),
++    ];
++  }
+ 
+   /// Realtime change signals used by the Office View summary.
+   static List<Stream<void>> officeChangeStreams() =>
+       operationalChangeStreams();
+ 
+   /// Realtime change signals used by the Field Engineer dashboard.
+-  static List<Stream<void>> fieldEngineerChangeStreams() =>
+-      teamChangeStreams();
++  static List<Stream<void>> fieldEngineerChangeStreams() {
++    final uid = AuthService.currentUser?.uid;
++    if (uid == null) return const <Stream<void>>[];
++    return <Stream<void>>[
++      AttendanceService.watchAttendanceForUser(uid),
++      CustomerVisitService.watchVisitsForUser(uid),
++      LiveLocationService.watchLiveLocation(uid),
++      LocationSessionService.watchSessionsForUser(uid),
++    ];
++  }
+ 
+   /// Loads Cab Tracking context for the current signed-in user.
+   static Future<CabMapContext> loadCabContext() async {
+@@ -75,6 +105,7 @@ class MapModesController {
+     }
+ 
+     final dateKey = dateKeyFromDate(DateTime.now());
++    final canManage = _canManageCab(currentUser.role);
+     final member = await CabManagementController.loadTodayMemberAssignment(
+       userId: uid,
+       dateKey: dateKey,
+@@ -85,21 +116,24 @@ class MapModesController {
+       dateKey: dateKey,
+     );
+ 
+-    final managerAssignments =
+-        await CabManagementController.loadAssignmentsForDate(dateKey: dateKey);
+-    final managerTrips =
+-        await CabManagementController.loadTripsForDate(dateKey: dateKey);
+-    final managerMembers =
+-        await CabManagementController.loadAssignmentMembersForDate(
+-      dateKey: dateKey,
+-    );
++    final managerAssignments = canManage
++        ? await CabManagementController.loadAssignmentsForDate(dateKey: dateKey)
++        : const <CabAssignmentModel>[];
++    final managerTrips = canManage
++        ? await CabManagementController.loadTripsForDate(dateKey: dateKey)
++        : const <CabTripModel>[];
++    final managerMembers = canManage
++        ? await CabManagementController.loadAssignmentMembersForDate(
++            dateKey: dateKey,
++          )
++        : const <CabAssignmentMemberModel>[];
+ 
+     final assignment = driverAssignment ??
+-        (member == null
+-            ? (managerAssignments.isEmpty ? null : managerAssignments.first)
+-            : await CabManagementController.loadAssignment(
+-                member.assignmentId,
+-              ));
++        (member != null
++            ? await CabManagementController.loadAssignment(member.assignmentId)
++            : canManage && managerAssignments.isNotEmpty
++                ? managerAssignments.first
++                : null);
+ 
+     final vehicle = assignment == null
+         ? null
+@@ -210,7 +244,11 @@ class MapModesController {
+   }
+ 
+   static bool _canManageCab(String role) {
+-    return role == 'manager' || role == 'admin' || role == 'ceo';
++    final normalized = role.trim().toLowerCase();
++    return normalized == 'manager' ||
++        normalized == 'admin' ||
++        normalized == 'administrator' ||
++        normalized == 'ceo';
+   }
+ }
+ 
+@@ -275,10 +313,10 @@ class CabMapContext {
+   bool get isEmployee => currentMember?.role == 'employee';
+ 
+   /// True when current user can manage cab assignments.
+-  bool get canManage => true;
++  bool get canManage => MapModesController._canManageCab(currentUser.role);
+ 
+   /// True when current user can mutate cab operations.
+-  bool get canMutateManagement => true;
++  bool get canMutateManagement => canManage;
+ 
+   /// Employees currently ready for pickup.
+   List<CabAssignmentMemberModel> get readyMembers => members
+diff --git a/lib/features/map/map_screen.dart b/lib/features/map/map_screen.dart
+index b68c72783e06c70267df184869226c960712a7ed..d59ef531ee26c866661494460252777f3bf952ff 100644
+--- a/lib/features/map/map_screen.dart
++++ b/lib/features/map/map_screen.dart
+@@ -12,6 +12,8 @@ import '../../core/models/cab_trip_rider_model.dart';
+ import '../../core/models/live_location_model.dart';
+ import '../../core/models/location_model.dart';
+ import '../../core/models/location_session_model.dart';
++import '../../core/models/user_model.dart';
++import '../../core/services/firestore_service.dart';
+ import '../../core/services/location_tracking_policy.dart';
+ import '../../core/theme/app_colors.dart';
+ import '../../core/theme/app_text_styles.dart';
+@@ -41,6 +43,7 @@ class _MapScreenState extends State<MapScreen> {
+   bool _followMe = true;
+   bool _isCameraAnimating = false;
+   bool _modeActionBusy = false;
++  bool _realtimeRefreshInProgress = false;
+   Timer? _clockTimer;
+   DateTime _now = DateTime.now();
+   StreamSubscription<LiveLocationModel>? _cabLocationSubscription;
+@@ -53,8 +56,7 @@ class _MapScreenState extends State<MapScreen> {
+   @override
+   void initState() {
+     super.initState();
+-    _mapFuture = _loadMapData();
+-    _modeFuture = _loadAndConfigureModePayload(_MapMode.fieldEngineer);
++    _mapFuture = _loadInitialMapData();
+     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+       if (!mounted) return;
+       setState(() {
+@@ -63,6 +65,13 @@ class _MapScreenState extends State<MapScreen> {
+     });
+   }
+ 
++  Future<_MapScreenData> _loadInitialMapData() async {
++    final data = await _loadMapData();
++    _selectedMode = _defaultModeForRole(data.user.role);
++    _modeFuture = _loadAndConfigureModePayload(_selectedMode);
++    return data;
++  }
++
+   @override
+   void dispose() {
+     _clockTimer?.cancel();
+@@ -76,6 +85,14 @@ class _MapScreenState extends State<MapScreen> {
+   }
+ 
+   Future<_MapScreenData> _loadMapData() async {
++    final uid = AuthService.currentUser?.uid;
++    if (uid == null) {
++      throw StateError('Map requires a signed-in user.');
++    }
++    final user = await FirestoreService.getUser(uid);
++    if (user == null) {
++      throw StateError('Signed-in user profile is unavailable.');
++    }
+     final location = await LocationController.getCurrentLocation();
+     final attendance = await _tryLoadAttendance();
+     final visits = await _tryLoadVisits();
+@@ -84,6 +101,7 @@ class _MapScreenState extends State<MapScreen> {
+       location: location,
+       attendance: attendance,
+       visits: visits,
++      user: user,
+     );
+   }
+ 
+@@ -196,6 +214,8 @@ class _MapScreenState extends State<MapScreen> {
+   }
+ 
+   Future<void> _refreshMapFromRealtime() async {
++    if (_realtimeRefreshInProgress) return;
++    _realtimeRefreshInProgress = true;
+     try {
+       final data = await _loadMapData();
+       if (!mounted || _selectedMode != _MapMode.fieldEngineer) return;
+@@ -205,10 +225,14 @@ class _MapScreenState extends State<MapScreen> {
+     } catch (error, stackTrace) {
+       debugPrint('Field Engineer realtime refresh failed: $error');
+       debugPrintStack(stackTrace: stackTrace);
++    } finally {
++      _realtimeRefreshInProgress = false;
+     }
+   }
+ 
+   Future<void> _refreshModeFromRealtime(_MapMode mode) async {
++    if (_realtimeRefreshInProgress) return;
++    _realtimeRefreshInProgress = true;
+     try {
+       final payload = await _loadModePayload(mode);
+       if (!mounted || mode != _selectedMode) return;
+@@ -219,17 +243,26 @@ class _MapScreenState extends State<MapScreen> {
+     } catch (error, stackTrace) {
+       debugPrint('${mode.label} realtime refresh failed: $error');
+       debugPrintStack(stackTrace: stackTrace);
++    } finally {
++      _realtimeRefreshInProgress = false;
+     }
+   }
+ 
+   Future<void> _reloadMap() async {
++    final data = await _loadMapData();
++    final allowedModes = _allowedModesForRole(data.user.role);
++    final mode = allowedModes.contains(_selectedMode)
++        ? _selectedMode
++        : allowedModes.first;
++    final payload = await _loadModePayload(mode);
++    if (!mounted) return;
++    await _configureModeSync(mode, payload);
+     setState(() {
+-      _mapFuture = _loadMapData();
+-      _modeFuture = _loadAndConfigureModePayload(_selectedMode);
++      _selectedMode = mode;
++      _mapFuture = Future<_MapScreenData>.value(data);
++      _modeFuture = Future<_MapModePayload>.value(payload);
+       _now = DateTime.now();
+     });
+-    await _mapFuture;
+-    await _modeFuture;
+   }
+ 
+   Future<void> _reloadMode() async {
+@@ -317,6 +350,7 @@ class _MapScreenState extends State<MapScreen> {
+ 
+     var session = await LocationController.loadActiveLocationSession(
+       cab.currentUser.uid,
++      trackingReason: LocationTrackingPolicy.reasonCabTrip,
+     );
+     session ??= await LocationController.startLocationSession(
+       userId: cab.currentUser.uid,
+@@ -408,6 +442,7 @@ class _MapScreenState extends State<MapScreen> {
+ 
+     final session = await LocationController.loadActiveLocationSession(
+       assignment.driverId,
++      trackingReason: LocationTrackingPolicy.reasonCabTrip,
+     );
+     if (session != null &&
+         session.trackingReason == LocationTrackingPolicy.reasonCabTrip) {
+@@ -516,7 +551,10 @@ class _MapScreenState extends State<MapScreen> {
+ 
+   Future<void> _stopEmployeePickupSharingQuietly(String userId) async {
+     final session = _employeePickupSession ??
+-        await LocationController.loadActiveLocationSession(userId);
++        await LocationController.loadActiveLocationSession(
++          userId,
++          trackingReason: LocationTrackingPolicy.reasonCabPickupReady,
++        );
+     if (session == null ||
+         session.trackingReason != LocationTrackingPolicy.reasonCabPickupReady) {
+       return;
+@@ -557,13 +595,24 @@ class _MapScreenState extends State<MapScreen> {
+           break;
+       }
+       await _reloadMap();
++      if (!mounted) return;
++      final message = switch (action) {
++        'start' => 'Duty started. Attendance and live location are active.',
++        'break' => 'Duty paused and break started.',
++        'resume' => 'Duty resumed and live location is active.',
++        'end' => 'Duty completed successfully.',
++        _ => 'Duty status updated.',
++      };
++      ScaffoldMessenger.of(context).showSnackBar(
++        SnackBar(content: Text(message)),
++      );
+     } catch (error, stackTrace) {
+       debugPrint('Duty action failed: $error');
+       debugPrintStack(stackTrace: stackTrace);
+       if (!mounted) return;
+       ScaffoldMessenger.of(context).showSnackBar(
+-        const SnackBar(
+-          content: Text('Unable to complete action. Please retry.'),
++        SnackBar(
++          content: Text(_dutyActionErrorMessage(error)),
+         ),
+       );
+     } finally {
+@@ -582,7 +631,10 @@ class _MapScreenState extends State<MapScreen> {
+     if (uid == null || attendance == null) {
+       throw StateError('Unable to start duty for the signed-in user.');
+     }
+-    var session = await LocationController.loadActiveLocationSession(uid);
++    var session = await LocationController.loadActiveLocationSession(
++      uid,
++      trackingReason: LocationTrackingPolicy.reasonFieldDuty,
++    );
+     if (session == null) {
+       session = await LocationController.startLocationSession(
+         userId: uid,
+@@ -603,7 +655,10 @@ class _MapScreenState extends State<MapScreen> {
+     await AttendanceController.startBreak();
+     final uid = AuthService.currentUser?.uid;
+     if (uid == null) return;
+-    final session = await LocationController.loadActiveLocationSession(uid);
++    final session = await LocationController.loadActiveLocationSession(
++      uid,
++      trackingReason: LocationTrackingPolicy.reasonFieldDuty,
++    );
+     await _cabLocationSubscription?.cancel();
+     _cabLocationSubscription = null;
+     if (session != null && session.isActive) {
+@@ -615,7 +670,10 @@ class _MapScreenState extends State<MapScreen> {
+     await AttendanceController.endBreak();
+     final uid = AuthService.currentUser?.uid;
+     if (uid == null) return;
+-    var session = await LocationController.loadActiveLocationSession(uid);
++    var session = await LocationController.loadActiveLocationSession(
++      uid,
++      trackingReason: LocationTrackingPolicy.reasonFieldDuty,
++    );
+     if (session == null) {
+       session = await LocationController.startLocationSession(
+         userId: uid,
+@@ -635,7 +693,10 @@ class _MapScreenState extends State<MapScreen> {
+     await AttendanceController.checkOut();
+     final uid = AuthService.currentUser?.uid;
+     if (uid == null) return;
+-    final session = await LocationController.loadActiveLocationSession(uid);
++    final session = await LocationController.loadActiveLocationSession(
++      uid,
++      trackingReason: LocationTrackingPolicy.reasonFieldDuty,
++    );
+     await _cabLocationSubscription?.cancel();
+     _cabLocationSubscription = null;
+     if (session != null) {
+@@ -685,7 +746,7 @@ class _MapScreenState extends State<MapScreen> {
+   void _showSearchFoundation() {
+     showModalBottomSheet<void>(
+       context: context,
+-      backgroundColor: const Color(0xFF0B0B0B),
++      backgroundColor: AppColors.surfaceMuted,
+       isScrollControlled: true,
+       builder: (context) => SafeArea(
+         child: Padding(
+@@ -748,7 +809,7 @@ class _MapScreenState extends State<MapScreen> {
+     ];
+     showModalBottomSheet<void>(
+       context: context,
+-      backgroundColor: const Color(0xFF0B0B0B),
++      backgroundColor: AppColors.surfaceMuted,
+       builder: (context) => SafeArea(
+         child: Padding(
+           padding: const EdgeInsets.all(16),
+@@ -788,7 +849,7 @@ class _MapScreenState extends State<MapScreen> {
+   void _showMapLegend() {
+     showModalBottomSheet<void>(
+       context: context,
+-      backgroundColor: const Color(0xFF0B0B0B),
++      backgroundColor: AppColors.surfaceMuted,
+       builder: (context) => const SafeArea(
+         child: Padding(
+           padding: EdgeInsets.all(16),
+@@ -816,12 +877,12 @@ class _MapScreenState extends State<MapScreen> {
+               _InlineStatusRow(
+                 title: 'Office',
+                 meta: 'Violet',
+-                color: Color(0xFF9C7CFF),
++                color: AppColors.textSecondary,
+               ),
+               _InlineStatusRow(
+                 title: 'Selected marker',
+                 meta: 'Rose',
+-                color: Color(0xFFFF5A8A),
++                color: AppColors.textSecondary,
+               ),
+             ],
+           ),
+@@ -833,7 +894,7 @@ class _MapScreenState extends State<MapScreen> {
+   @override
+   Widget build(BuildContext context) {
+     return Scaffold(
+-      backgroundColor: const Color(0xFF0B0B0B),
++      backgroundColor: AppColors.surfaceMuted,
+       body: FutureBuilder<_MapScreenData>(
+         future: _mapFuture,
+         builder: (context, mapSnapshot) {
+@@ -860,6 +921,7 @@ class _MapScreenState extends State<MapScreen> {
+                 data: data,
+                 now: _now,
+                 mode: _selectedMode,
++                allowedModes: _allowedModesForRole(data.user.role),
+                 modePayload:
+                     modeSnapshot.data ?? const _MapModePayload(),
+                 modeLoading:
+@@ -916,6 +978,7 @@ class _MapExperience extends StatelessWidget {
+   final _MapScreenData data;
+   final DateTime now;
+   final _MapMode mode;
++  final List<_MapMode> allowedModes;
+   final _MapModePayload modePayload;
+   final bool modeLoading;
+   final Object? modeError;
+@@ -949,6 +1012,7 @@ class _MapExperience extends StatelessWidget {
+     required this.data,
+     required this.now,
+     required this.mode,
++    required this.allowedModes,
+     required this.modePayload,
+     required this.modeLoading,
+     required this.modeError,
+@@ -980,6 +1044,7 @@ class _MapExperience extends StatelessWidget {
+     final position = LatLng(data.location.latitude, data.location.longitude);
+     final currentVisit = _currentVisit(data.visits);
+     final duty = _DutySnapshot.fromAttendance(data.attendance);
++    final isAdministrator = _isAdministratorRole(data.user.role);
+ 
+     return Stack(
+       fit: StackFit.expand,
+@@ -1019,14 +1084,23 @@ class _MapExperience extends StatelessWidget {
+             child: Column(
+               crossAxisAlignment: CrossAxisAlignment.start,
+               children: [
+-                _TopMapOverlay(duty: duty, now: now),
++                _TopMapOverlay(
++                  duty: duty,
++                  now: now,
++                  isAdministrator: isAdministrator,
++                ),
+                 const SizedBox(height: 8),
+                 _TrackingModePill(
+                   currentMode: mode,
++                  allowedModes: allowedModes,
+                   onSelected: onModeSelected,
+                 ),
+                 const SizedBox(height: 8),
+-                _AdminStatusStrip(mode: mode, now: now),
++                _AdminStatusStrip(
++                  mode: mode,
++                  now: now,
++                  isAdministrator: isAdministrator,
++                ),
+               ],
+             ),
+           ),
+@@ -1080,10 +1154,12 @@ class _MapExperience extends StatelessWidget {
+ class _TopMapOverlay extends StatelessWidget {
+   final _DutySnapshot duty;
+   final DateTime now;
++  final bool isAdministrator;
+ 
+   const _TopMapOverlay({
+     required this.duty,
+     required this.now,
++    required this.isAdministrator,
+   });
+ 
+   @override
+@@ -1094,8 +1170,8 @@ class _TopMapOverlay extends StatelessWidget {
+         builder: (context, constraints) {
+           final veryCompact = constraints.maxWidth < 360;
+           final status = _StatusPill(
+-            label: duty.headerLabel,
+-            color: duty.color,
++            label: isAdministrator ? 'Administrator' : duty.headerLabel,
++            color: isAdministrator ? AppColors.textPrimary : duty.color,
+             compact: true,
+           );
+           final time = _TimePill(time: _formatClock(now), compact: veryCompact);
+@@ -1116,10 +1192,12 @@ class _TopMapOverlay extends StatelessWidget {
+ 
+ class _TrackingModePill extends StatelessWidget {
+   final _MapMode currentMode;
++  final List<_MapMode> allowedModes;
+   final ValueChanged<_MapMode> onSelected;
+ 
+   const _TrackingModePill({
+     required this.currentMode,
++    required this.allowedModes,
+     required this.onSelected,
+   });
+ 
+@@ -1132,7 +1210,7 @@ class _TrackingModePill extends StatelessWidget {
+         initialValue: currentMode,
+         position: PopupMenuPosition.under,
+         offset: const Offset(0, 8),
+-        color: const Color(0xF20B0B0B),
++        color: AppColors.overlay,
+         elevation: 10,
+         surfaceTintColor: AppColors.transparent,
+         shape: RoundedRectangleBorder(
+@@ -1141,7 +1219,7 @@ class _TrackingModePill extends StatelessWidget {
+         ),
+         onSelected: onSelected,
+         itemBuilder: (context) {
+-          return _MapMode.values.map((mode) {
++          return allowedModes.map((mode) {
+             final selected = mode == currentMode;
+             return PopupMenuItem<_MapMode>(
+               value: mode,
+@@ -1211,8 +1289,13 @@ class _TrackingModePill extends StatelessWidget {
+ class _AdminStatusStrip extends StatelessWidget {
+   final _MapMode mode;
+   final DateTime now;
++  final bool isAdministrator;
+ 
+-  const _AdminStatusStrip({required this.mode, required this.now});
++  const _AdminStatusStrip({
++    required this.mode,
++    required this.now,
++    required this.isAdministrator,
++  });
+ 
+   @override
+   Widget build(BuildContext context) {
+@@ -1230,39 +1313,41 @@ class _AdminStatusStrip extends StatelessWidget {
+             const SizedBox(width: 6),
+             const _StatusPill(
+               label: 'Firestore Live',
+-              color: AppColors.success,
++              color: AppColors.textPrimary,
+               compact: true,
+             ),
+             const SizedBox(width: 6),
+             const _StatusPill(
+               label: 'GPS Active',
+-              color: AppColors.success,
++              color: AppColors.textSecondary,
+               compact: true,
+             ),
+             const SizedBox(width: 6),
+             const _StatusPill(
+               label: 'Internet --',
+-              color: AppColors.warning,
++              color: AppColors.textSecondary,
+               compact: true,
+             ),
+             const SizedBox(width: 6),
+             _StatusPill(
+               label: mode.label,
+-              color: AppColors.info,
+-              compact: true,
+-            ),
+-            const SizedBox(width: 6),
+-            const _StatusPill(
+-              label: 'All Branches',
+-              color: AppColors.textSecondary,
+-              compact: true,
+-            ),
+-            const SizedBox(width: 6),
+-            const _StatusPill(
+-              label: 'All Regions',
+-              color: AppColors.textSecondary,
++              color: AppColors.textPrimary,
+               compact: true,
+             ),
++            if (isAdministrator) ...[
++              const SizedBox(width: 6),
++              const _StatusPill(
++                label: 'All Branches',
++                color: AppColors.textSecondary,
++                compact: true,
++              ),
++              const SizedBox(width: 6),
++              const _StatusPill(
++                label: 'All Regions',
++                color: AppColors.textSecondary,
++                compact: true,
++              ),
++            ],
+           ],
+         ),
+       ),
+@@ -2031,10 +2116,12 @@ class _ManagerCabPanel extends StatelessWidget {
+       mainAxisSize: MainAxisSize.min,
+       children: [
+         _PanelHeader(
+-          title: 'Manager Cab Dashboard',
++          title: cab.currentUser.role.trim().toLowerCase() == 'manager'
++              ? 'Manager Cab Dashboard'
++              : 'Administrator Cab Dashboard',
+           trailing: const _StatusPill(
+             label: 'Admin',
+-            color: AppColors.info,
++            color: AppColors.textPrimary,
+             compact: true,
+           ),
+         ),
+@@ -2983,13 +3070,15 @@ class _MetricTile extends StatelessWidget {
+ 
+   @override
+   Widget build(BuildContext context) {
++    final availableWidth = MediaQuery.sizeOf(context).width - 52;
++    final tileWidth = (availableWidth / 2).clamp(132.0, 180.0);
+     return SizedBox(
+-      width: 142,
++      width: tileWidth,
+       child: _InfoTile(
+         icon: icon,
+         label: label,
+         value: value,
+-        color: AppColors.info,
++        color: AppColors.textPrimary,
+       ),
+     );
+   }
+@@ -3307,7 +3396,7 @@ class _MapUtilitiesMenu extends StatelessWidget {
+   Widget build(BuildContext context) {
+     return PopupMenuButton<String>(
+       tooltip: 'Search, filters and legend',
+-      color: const Color(0xF20B0B0B),
++      color: AppColors.overlay,
+       surfaceTintColor: AppColors.transparent,
+       onSelected: onSelected,
+       itemBuilder: (context) => const <PopupMenuEntry<String>>[
+@@ -3435,7 +3524,7 @@ class _MapSurface extends StatelessWidget {
+   Widget build(BuildContext context) {
+     return DecoratedBox(
+       decoration: BoxDecoration(
+-        color: const Color(0xF20B0B0B),
++        color: AppColors.overlay,
+         borderRadius: BorderRadius.circular(20),
+         border: Border.all(color: Colors.white.withAlpha(28)),
+       ),
+@@ -3700,11 +3789,13 @@ class _MapScreenData {
+   final LocationModel location;
+   final AttendanceModel? attendance;
+   final List<CustomerVisitModel> visits;
++  final UserModel user;
+ 
+   const _MapScreenData({
+     required this.location,
+     required this.attendance,
+     required this.visits,
++    required this.user,
+   });
+ }
+ 
+@@ -3772,6 +3863,65 @@ enum _MapMode {
+   officeView,
+ }
+ 
++List<_MapMode> _allowedModesForRole(String? role) {
++  switch (_normalizedRole(role)) {
++    case 'admin':
++    case 'administrator':
++    case 'ceo':
++      return const <_MapMode>[
++        _MapMode.officeView,
++        _MapMode.teamTracking,
++        _MapMode.cabTracking,
++      ];
++    case 'manager':
++      return const <_MapMode>[
++        _MapMode.officeView,
++        _MapMode.teamTracking,
++        _MapMode.customerLocations,
++        _MapMode.cabTracking,
++      ];
++    case 'driver':
++    case 'cab_driver':
++    case 'cab driver':
++      return const <_MapMode>[_MapMode.cabTracking];
++    case 'employee':
++    case 'office_employee':
++    case 'office employee':
++      return const <_MapMode>[_MapMode.cabTracking];
++    case 'engineer':
++    case 'service_engineer':
++    case 'service engineer':
++    case 'field_engineer':
++    case 'field engineer':
++      return const <_MapMode>[
++        _MapMode.fieldEngineer,
++        _MapMode.customerLocations,
++      ];
++    default:
++      return const <_MapMode>[_MapMode.fieldEngineer];
++  }
++}
++
++_MapMode _defaultModeForRole(String? role) =>
++    _allowedModesForRole(role).first;
++
++String _normalizedRole(String? role) => role?.trim().toLowerCase() ?? '';
++
++bool _isAdministratorRole(String? role) {
++  final normalized = _normalizedRole(role);
++  return normalized == 'admin' ||
++      normalized == 'administrator' ||
++      normalized == 'ceo';
++}
++
++String _dutyActionErrorMessage(Object error) {
++  final message = error.toString().replaceFirst('Bad state: ', '').trim();
++  if (message.isEmpty) {
++    return 'Duty action failed. Please retry.';
++  }
++  return message;
++}
++
+ extension _MapModeDetails on _MapMode {
+   String get label {
+     switch (this) {

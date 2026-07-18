@@ -2088,11 +2088,6 @@ class _EmployeeCabPanel extends StatelessWidget {
               label: 'Cab Number',
               value: cab.vehicle?.vehicleNumber ?? '--',
             ),
-            _MetricTile(
-              icon: Icons.groups_outlined,
-              label: 'Drivers',
-              value: driverCount.toString(),
-            ),
             const _MetricTile(
               icon: Icons.timer_outlined,
               label: 'ETA',
@@ -2237,6 +2232,11 @@ class _ManagerCabPanel extends StatelessWidget {
               icon: Icons.local_taxi_outlined,
               label: "Today's Active Cabs",
               value: cab.managerAssignments.length.toString(),
+            ),
+            _MetricTile(
+              icon: Icons.groups_outlined,
+              label: 'Drivers',
+              value: driverCount.toString(),
             ),
             _MetricTile(
               icon: Icons.local_parking_outlined,

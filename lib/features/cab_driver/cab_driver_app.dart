@@ -90,30 +90,6 @@ class _CabDriverAppState extends State<CabDriverApp> {
     }
   }
 
-
-
-  Future<void> _actionWithEmployees(
-    Future<void> Function(CabDriverOperations data, List<String> employeeIds)
-        action,
-    CabDriverOperations data,
-    List<String> employeeIds,
-  ) async {
-    if (_busy) return;
-    setState(() => _busy = true);
-    try {
-      await action(data, employeeIds);
-      _reload();
-    } catch (error) {
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('$error')));
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<CabDriverOperations>(
@@ -231,8 +207,8 @@ Future<void> _showStartTripSheet(
   CabDriverOperations data,
 ) async {
   final candidates = await _loadPickupCandidates(data);
+  if (!context.mounted) return;
   if (candidates.isEmpty) {
-    if (!context.mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('No eligible employees found for pickup.')),
     );
