@@ -100,12 +100,10 @@ class _HomeDashboardState extends State<HomeDashboard>
       vsync: this,
       duration: const Duration(milliseconds: 720),
     );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.035),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(parent: _introController, curve: Curves.easeOutCubic),
-    );
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.035), end: Offset.zero).animate(
+          CurvedAnimation(parent: _introController, curve: Curves.easeOutCubic),
+        );
     _introController.forward();
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (!mounted) return;
@@ -551,8 +549,7 @@ class _TodayOperationsCard extends StatelessWidget {
     final completedVisits = _visitCountByStatus(todayVisits, 'completed');
     final totalVisits = todayVisits.length;
     final openIssues = _openIssueCount(todayVisits);
-    final progress =
-        totalVisits == 0 ? 0.0 : completedVisits / totalVisits;
+    final progress = totalVisits == 0 ? 0.0 : completedVisits / totalVisits;
     final hasVisitData = visitsError == null;
 
     final metrics = [
@@ -684,8 +681,9 @@ class _OperationDatum extends StatelessWidget {
                   fontWeight: FontWeight.w900,
                   height: 1.05,
                   letterSpacing: 0,
-                  fontFeatures:
-                      tabular ? const [FontFeature.tabularFigures()] : null,
+                  fontFeatures: tabular
+                      ? const [FontFeature.tabularFigures()]
+                      : null,
                 ),
               ),
             ),
@@ -741,10 +739,7 @@ class _MetricWrap extends StatelessWidget {
           runSpacing: 8,
           children: [
             for (final child in children)
-              SizedBox(
-                width: tileWidth,
-                child: child,
-              ),
+              SizedBox(width: tileWidth, child: child),
           ],
         );
       },
@@ -1057,9 +1052,7 @@ class _NextVisitRow extends StatelessWidget {
                       address,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.caption.copyWith(
-                        letterSpacing: 0,
-                      ),
+                      style: AppTextStyles.caption.copyWith(letterSpacing: 0),
                     ),
                   ),
                 ],
@@ -1115,7 +1108,10 @@ class _NextVisitRow extends StatelessWidget {
                   Flexible(
                     child: Align(
                       alignment: Alignment.centerRight,
-                      child: _StatusPill(label: status.label, color: status.color),
+                      child: _StatusPill(
+                        label: status.label,
+                        color: status.color,
+                      ),
                     ),
                   ),
                 ],
@@ -1274,7 +1270,7 @@ class _MapStatusBar extends StatelessWidget {
         : 'Location unavailable';
     final coordinateText = hasLocation
         ? '${location!.latitude.toStringAsFixed(5)}, '
-            '${location!.longitude.toStringAsFixed(5)}'
+              '${location!.longitude.toStringAsFixed(5)}'
         : '--';
 
     return LayoutBuilder(
@@ -1343,10 +1339,7 @@ class _OutlinedActionButton extends StatelessWidget {
   final String label;
   final VoidCallback onPressed;
 
-  const _OutlinedActionButton({
-    required this.label,
-    required this.onPressed,
-  });
+  const _OutlinedActionButton({required this.label, required this.onPressed});
 
   @override
   Widget build(BuildContext context) {
@@ -1902,10 +1895,7 @@ class _IconChip extends StatelessWidget {
   final IconData icon;
   final Color color;
 
-  const _IconChip({
-    required this.icon,
-    required this.color,
-  });
+  const _IconChip({required this.icon, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -1932,10 +1922,7 @@ class _TinyStatusDot extends StatelessWidget {
     return Container(
       width: 8,
       height: 8,
-      decoration: BoxDecoration(
-        color: color,
-        shape: BoxShape.circle,
-      ),
+      decoration: BoxDecoration(color: color, shape: BoxShape.circle),
     );
   }
 }
@@ -2143,8 +2130,16 @@ class _MapPreviewPainter extends CustomPainter {
 
     canvas.drawPath(path, routePaint);
     final center = Offset(size.width * 0.50, size.height * 0.52);
-    canvas.drawCircle(center, 46, Paint()..color = AppColors.info.withAlpha(16));
-    canvas.drawCircle(center, 30, Paint()..color = AppColors.info.withAlpha(26));
+    canvas.drawCircle(
+      center,
+      46,
+      Paint()..color = AppColors.info.withAlpha(16),
+    );
+    canvas.drawCircle(
+      center,
+      30,
+      Paint()..color = AppColors.info.withAlpha(26),
+    );
     canvas.drawCircle(center, 14, Paint()..color = AppColors.info);
   }
 
@@ -2251,9 +2246,7 @@ String _formatAverageVisitDuration(
     0,
     (sum, duration) => sum + duration.inSeconds,
   );
-  final average = Duration(
-    seconds: (totalSeconds / durations.length).round(),
-  );
+  final average = Duration(seconds: (totalSeconds / durations.length).round());
 
   return _formatCompactDuration(average);
 }
@@ -2274,7 +2267,8 @@ String _formatCompactDuration(Duration duration) {
 int _openIssueCount(List<CustomerVisitModel> visits) {
   return visits.where((visit) {
     final isComplete = visit.status.toLowerCase() == 'completed';
-    final hasIssue = visit.issueCategory.trim().isNotEmpty ||
+    final hasIssue =
+        visit.issueCategory.trim().isNotEmpty ||
         visit.issueDescription.trim().isNotEmpty;
     return !isComplete && hasIssue;
   }).length;

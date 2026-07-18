@@ -214,7 +214,9 @@ class CabDriverController {
       updatedAt: now,
     );
 
-    final assignmentId = await CabManagementController.createAssignment(assignment);
+    final assignmentId = await CabManagementController.createAssignment(
+      assignment,
+    );
     final created = assignment.copyWith(id: assignmentId);
     await CabManagementController.upsertAssignmentMembers([
       CabAssignmentMemberModel(
@@ -235,7 +237,9 @@ class CabDriverController {
 
   static Future<List<EmployeeModel>> _fetchEligiblePickupEmployees() async {
     final today = DateTime.now();
-    final attendanceRecords = await AttendanceService.fetchAttendanceForDate(today);
+    final attendanceRecords = await AttendanceService.fetchAttendanceForDate(
+      today,
+    );
     final activeUserIds = attendanceRecords
         .where((record) => record.isCheckedIn)
         .map((record) => record.userId)
@@ -266,20 +270,24 @@ class CabDriverController {
         shiftStatus: 'active',
       ),
     );
-    var session = await LocationController.loadActiveLocationSession(data.driver.uid);
+    var session = await LocationController.loadActiveLocationSession(
+      data.driver.uid,
+    );
     if (session == null) {
       session = await LocationController.startLocationSession(
         userId: data.driver.uid,
         trackingReason: LocationTrackingPolicy.reasonFieldDuty,
         metadata: {'assignmentId': assignment.id},
       );
-    } else if (session.trackingReason != LocationTrackingPolicy.reasonFieldDuty) {
+    } else if (session.trackingReason !=
+        LocationTrackingPolicy.reasonFieldDuty) {
       session = await LocationController.resumeLocationSession(session);
     }
     await _locationSubscription?.cancel();
-    _locationSubscription = await LocationController.startForegroundLiveLocationUpdates(
-      session: session,
-    );
+    _locationSubscription =
+        await LocationController.startForegroundLiveLocationUpdates(
+          session: session,
+        );
   }
 
   static Future<void> endDuty(CabDriverOperations data) async {
@@ -384,11 +392,7 @@ class CabDriverController {
         updatedAt: now,
       ),
     );
-    await _upsertAssignmentMembersForEmployees(
-      data,
-      assignment,
-      employeeIds,
-    );
+    await _upsertAssignmentMembersForEmployees(data, assignment, employeeIds);
     await _initializeRiders(data, trip, employeeIds: employeeIds);
     await _event(data, trip, 'trip_started', 'Driver started cab trip.');
     await _notify(
@@ -638,31 +642,28 @@ class CabDriverController {
     final selectedEmployeeIds = employeeIds != null
         ? employeeIds.toSet()
         : data.members
-            .where((member) => member.role == 'employee')
-            .map((member) => member.userId)
-            .toSet();
+              .where((member) => member.role == 'employee')
+              .map((member) => member.userId)
+              .toSet();
 
-    final members = selectedEmployeeIds
-        .map((userId) {
-          final member = data.members
-              .firstWhere(
-                (item) => item.userId == userId && item.role == 'employee',
-                orElse: () => CabAssignmentMemberModel(
-                  id: '${data.todayAssignment?.dateKey ?? dateKey(DateTime.now())}_$userId',
-                  assignmentId: trip.assignmentId,
-                  dateKey: data.todayAssignment?.dateKey ?? dateKey(DateTime.now()),
-                  userId: userId,
-                  role: 'employee',
-                  driverId: data.driver.uid,
-                  vehicleId: data.todayAssignment?.vehicleId ?? '',
-                  status: 'assigned',
-                  createdAt: DateTime.now(),
-                  updatedAt: DateTime.now(),
-                ),
-              );
-          return member;
-        })
-        .toList();
+    final members = selectedEmployeeIds.map((userId) {
+      final member = data.members.firstWhere(
+        (item) => item.userId == userId && item.role == 'employee',
+        orElse: () => CabAssignmentMemberModel(
+          id: '${data.todayAssignment?.dateKey ?? dateKey(DateTime.now())}_$userId',
+          assignmentId: trip.assignmentId,
+          dateKey: data.todayAssignment?.dateKey ?? dateKey(DateTime.now()),
+          userId: userId,
+          role: 'employee',
+          driverId: data.driver.uid,
+          vehicleId: data.todayAssignment?.vehicleId ?? '',
+          status: 'assigned',
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        ),
+      );
+      return member;
+    }).toList();
 
     final driverLocation = data.locations[data.driver.uid];
     members.sort((a, b) {

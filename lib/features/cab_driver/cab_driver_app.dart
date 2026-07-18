@@ -269,15 +269,17 @@ Future<void> _showStartTripSheet(
                         onPressed: filtered.isEmpty
                             ? null
                             : () => setState(() {
-                                  if (allSelected) {
-                                    selected.clear();
-                                  } else {
-                                    selected.addAll(
-                                      filtered.map((item) => item.employee.uid),
-                                    );
-                                  }
-                                }),
-                        child: Text(allSelected ? 'Clear Selection' : 'Select All'),
+                                if (allSelected) {
+                                  selected.clear();
+                                } else {
+                                  selected.addAll(
+                                    filtered.map((item) => item.employee.uid),
+                                  );
+                                }
+                              }),
+                        child: Text(
+                          allSelected ? 'Clear Selection' : 'Select All',
+                        ),
                       ),
                     ),
                   ],
@@ -319,8 +321,8 @@ Future<void> _showStartTripSheet(
                           secondary: CircleAvatar(
                             backgroundImage:
                                 item.employee.profileImage.isNotEmpty
-                                    ? NetworkImage(item.employee.profileImage)
-                                    : null,
+                                ? NetworkImage(item.employee.profileImage)
+                                : null,
                             child: item.employee.profileImage.isEmpty
                                 ? const Icon(Icons.person)
                                 : null,
@@ -334,13 +336,15 @@ Future<void> _showStartTripSheet(
                   children: [
                     Expanded(
                       child: FilledButton(
-                        onPressed: selected.isEmpty ? null : () async {
-                          Navigator.of(context).pop();
-                          await CabDriverController.startTripWithEmployees(
-                            data,
-                            selected.toList(),
-                          );
-                        },
+                        onPressed: selected.isEmpty
+                            ? null
+                            : () async {
+                                Navigator.of(context).pop();
+                                await CabDriverController.startTripWithEmployees(
+                                  data,
+                                  selected.toList(),
+                                );
+                              },
                         child: const Text('Start Trip'),
                       ),
                     ),
@@ -509,8 +513,9 @@ class _Actions extends StatelessWidget {
     Future<void> Function(CabDriverOperations),
     CabDriverOperations,
   )
-      onAction;
-  final Future<void> Function(BuildContext, CabDriverOperations) onStartTripSheet;
+  onAction;
+  final Future<void> Function(BuildContext, CabDriverOperations)
+  onStartTripSheet;
 
   const _Actions({
     required this.data,
@@ -543,8 +548,7 @@ class _Actions extends StatelessWidget {
               CabDriverController.endDuty,
               color: AppColors.error,
             ),
-          if (data.dutyActive && trip == null)
-            _startTripButton(context, data),
+          if (data.dutyActive && trip == null) _startTripButton(context, data),
           if (data.dutyActive && trip?.status == 'created')
             _button(
               'Resume Trip',
@@ -590,9 +594,7 @@ class _Actions extends StatelessWidget {
 
   Widget _startTripButton(BuildContext context, CabDriverOperations data) {
     return FilledButton.icon(
-      onPressed: busy
-          ? null
-          : () => onStartTripSheet(context, data),
+      onPressed: busy ? null : () => onStartTripSheet(context, data),
       icon: const Icon(Icons.route_outlined),
       label: const Text('Start Trip'),
     );

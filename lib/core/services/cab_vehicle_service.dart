@@ -27,7 +27,9 @@ class CabVehicleService {
 
   static Future<void> updateVehicle(CabVehicleModel vehicle) async {
     if (vehicle.id.isEmpty) {
-      throw StateError('CabVehicleService.updateVehicle requires a vehicle id.');
+      throw StateError(
+        'CabVehicleService.updateVehicle requires a vehicle id.',
+      );
     }
 
     try {
