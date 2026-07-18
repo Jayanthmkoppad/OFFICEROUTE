@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/premium_widgets.dart';
+import '../auth/session_approval_center.dart';
 import 'controllers/notification_controller.dart';
 import 'models/app_notification_model.dart';
 import 'models/notification_preferences_model.dart';
@@ -17,11 +20,32 @@ class NotificationCenterScreen extends StatefulWidget {
 
 class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
   late Future<_NotificationViewData> _future;
+  StreamSubscription<void>? _subscription;
+  Timer? _debounce;
 
   @override
   void initState() {
     super.initState();
     _future = _load();
+    _subscription = NotificationController.watchMyNotifications().listen(
+      (_) {
+        _debounce?.cancel();
+        _debounce = Timer(const Duration(milliseconds: 350), () {
+          if (mounted) _refresh();
+        });
+      },
+      onError: (Object error, StackTrace stackTrace) {
+        debugPrint('Notification realtime listener failed: $error');
+        debugPrintStack(stackTrace: stackTrace);
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    _debounce?.cancel();
+    super.dispose();
   }
 
   Future<_NotificationViewData> _load() async {
@@ -84,6 +108,55 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
     }
   }
 
+  Future<void> _openNotification(AppNotificationModel notification) async {
+    try {
+      final type = notification.type.trim().toLowerCase();
+      final isSessionRequest =
+          type == 'session_access_request' ||
+          notification.title.trim().toLowerCase() ==
+              'new session access request';
+      if (!isSessionRequest) {
+        if (!notification.isRead) {
+          await NotificationController.markAsRead(notification);
+        }
+        await _refresh();
+        return;
+      }
+
+      final processed = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (approvalContext) => Scaffold(
+            appBar: AppBar(title: const Text('Session Approval Center')),
+            body: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: SessionApprovalCenter(
+                initialRequestQuery:
+                    '${notification.title} ${notification.body}',
+                onRequestProcessed: (_) {
+                  if (approvalContext.mounted) {
+                    Navigator.of(approvalContext).pop(true);
+                  }
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      if (!mounted) return;
+      if (processed == true) {
+        await NotificationController.deleteNotification(notification);
+      } else if (!notification.isRead) {
+        await NotificationController.markAsRead(notification);
+      }
+      await _refresh();
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Notification action failed: $error')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -108,13 +181,15 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
             );
           }
 
-          final data = snapshot.data ??
+          final data =
+              snapshot.data ??
               _NotificationViewData(
                 notifications: const <AppNotificationModel>[],
                 preferences: NotificationPreferencesModel.defaults(),
               );
-          final unreadCount =
-              data.notifications.where((item) => !item.isRead).length;
+          final unreadCount = data.notifications
+              .where((item) => !item.isRead)
+              .length;
 
           return RefreshIndicator(
             onRefresh: _refresh,
@@ -132,6 +207,7 @@ class _NotificationCenterScreenState extends State<NotificationCenterScreen> {
                     await NotificationController.markAsRead(notification);
                     await _refresh();
                   },
+                  onOpen: _openNotification,
                 );
                 final settings = Column(
                   children: [
@@ -261,6 +337,7 @@ class _NotificationHistoryCard extends StatelessWidget {
   final VoidCallback onCreateLocal;
   final VoidCallback onMarkAllRead;
   final Future<void> Function(AppNotificationModel notification) onMarkRead;
+  final Future<void> Function(AppNotificationModel notification) onOpen;
 
   const _NotificationHistoryCard({
     required this.notifications,
@@ -268,6 +345,7 @@ class _NotificationHistoryCard extends StatelessWidget {
     required this.onCreateLocal,
     required this.onMarkAllRead,
     required this.onMarkRead,
+    required this.onOpen,
   });
 
   @override
@@ -303,19 +381,23 @@ class _NotificationHistoryCard extends StatelessWidget {
             const PremiumEmptyState(
               icon: Icons.notifications_none_outlined,
               title: 'No notifications yet',
-              message: 'Local app notifications and Firestore history will appear here.',
+              message:
+                  'Local app notifications and Firestore history will appear here.',
             )
           else
             Column(
-              children: notifications.map((notification) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: _NotificationTile(
-                    notification: notification,
-                    onMarkRead: () => onMarkRead(notification),
-                  ),
-                );
-              }).toList(growable: false),
+              children: notifications
+                  .map((notification) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _NotificationTile(
+                        notification: notification,
+                        onMarkRead: () => onMarkRead(notification),
+                        onTap: () => onOpen(notification),
+                      ),
+                    );
+                  })
+                  .toList(growable: false),
             ),
         ],
       ),
@@ -326,66 +408,78 @@ class _NotificationHistoryCard extends StatelessWidget {
 class _NotificationTile extends StatelessWidget {
   final AppNotificationModel notification;
   final VoidCallback onMarkRead;
+  final VoidCallback onTap;
 
   const _NotificationTile({
     required this.notification,
     required this.onMarkRead,
+    required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final statusColor =
-        notification.isRead ? AppColors.textSecondary : AppColors.info;
+    final statusColor = notification.isRead
+        ? AppColors.textSecondary
+        : AppColors.info;
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withAlpha(notification.isRead ? 8 : 16),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: statusColor.withAlpha(48)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Row(
-          children: [
-            PremiumIconChip(
-              icon: _notificationIcon(notification.type),
-              color: statusColor,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white.withAlpha(notification.isRead ? 8 : 16),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: statusColor.withAlpha(48)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Row(
+              children: [
+                PremiumIconChip(
+                  icon: _notificationIcon(notification.type),
+                  color: statusColor,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        notification.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.bodyLarge.copyWith(
+                          letterSpacing: 0,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        notification.body,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.caption.copyWith(height: 1.35),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        '${notification.source} - ${_formatDate(notification.createdAt)}',
+                        style: AppTextStyles.caption.copyWith(
+                          color: AppColors.textDisabled,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (!notification.isRead)
+                  IconButton(
+                    onPressed: onMarkRead,
+                    icon: const Icon(Icons.done),
+                    tooltip: 'Mark read',
+                  ),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    notification.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.bodyLarge.copyWith(letterSpacing: 0),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    notification.body,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.caption.copyWith(height: 1.35),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${notification.source} - ${_formatDate(notification.createdAt)}',
-                    style: AppTextStyles.caption.copyWith(
-                      color: AppColors.textDisabled,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (!notification.isRead)
-              IconButton(
-                onPressed: onMarkRead,
-                icon: const Icon(Icons.done),
-                tooltip: 'Mark read',
-              ),
-          ],
+          ),
         ),
       ),
     );
@@ -427,10 +521,7 @@ class _PreferencesCard extends StatelessWidget {
   final NotificationPreferencesModel preferences;
   final ValueChanged<NotificationPreferencesModel> onChanged;
 
-  const _PreferencesCard({
-    required this.preferences,
-    required this.onChanged,
-  });
+  const _PreferencesCard({required this.preferences, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -446,14 +537,14 @@ class _PreferencesCard extends StatelessWidget {
           _PreferenceSwitch(
             label: 'Attendance reminders',
             value: preferences.attendanceReminders,
-            onChanged: (value) => onChanged(
-              preferences.copyWith(attendanceReminders: value),
-            ),
+            onChanged: (value) =>
+                onChanged(preferences.copyWith(attendanceReminders: value)),
           ),
           _PreferenceSwitch(
             label: 'Visit alerts',
             value: preferences.visitAlerts,
-            onChanged: (value) => onChanged(preferences.copyWith(visitAlerts: value)),
+            onChanged: (value) =>
+                onChanged(preferences.copyWith(visitAlerts: value)),
           ),
           _PreferenceSwitch(
             label: 'Manager alerts',
@@ -464,16 +555,14 @@ class _PreferencesCard extends StatelessWidget {
           _PreferenceSwitch(
             label: 'Local in-app notifications',
             value: preferences.localInAppNotifications,
-            onChanged: (value) => onChanged(
-              preferences.copyWith(localInAppNotifications: value),
-            ),
+            onChanged: (value) =>
+                onChanged(preferences.copyWith(localInAppNotifications: value)),
           ),
           _PreferenceSwitch(
             label: 'FCM placeholders',
             value: preferences.fcmPlaceholdersEnabled,
-            onChanged: (value) => onChanged(
-              preferences.copyWith(fcmPlaceholdersEnabled: value),
-            ),
+            onChanged: (value) =>
+                onChanged(preferences.copyWith(fcmPlaceholdersEnabled: value)),
           ),
         ],
       ),

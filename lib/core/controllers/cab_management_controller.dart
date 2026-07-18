@@ -60,6 +60,16 @@ class CabManagementController {
     return CabDriverShiftService.fetchShiftsForDriver(driverId: driverId);
   }
 
+  static Future<CabDriverShiftModel?> loadTodayShiftForDriver({
+    required String driverId,
+    required String dateKey,
+  }) {
+    return CabDriverShiftService.fetchTodayShiftForDriver(
+      driverId: driverId,
+      dateKey: dateKey,
+    );
+  }
+
   /// Loads all driver shifts.
   static Future<List<CabDriverShiftModel>> loadAllShifts() async {
     return CabDriverShiftService.fetchAllShifts();
@@ -199,6 +209,30 @@ class CabManagementController {
     required String dateKey,
   }) {
     return CabTripService.fetchTripsForDate(dateKey: dateKey);
+  }
+
+  static Future<List<CabTripModel>> loadTripsForDriver(String driverId) {
+    return CabTripService.fetchTripsForDriver(driverId);
+  }
+
+  static Future<List<CabTripModel>> loadAllTrips() {
+    return CabTripService.fetchAllTrips();
+  }
+
+  static Future<List<CabTripEventModel>> loadTripEvents(String tripId) {
+    return CabTripService.fetchEvents(tripId);
+  }
+
+  static Future<void> updateTripRiderFields({
+    required String tripId,
+    required String riderId,
+    required Map<String, Object?> fields,
+  }) {
+    return CabTripService.updateRiderFields(
+      tripId: tripId,
+      riderId: riderId,
+      fields: fields,
+    );
   }
 
   /// Writes or replaces a cab trip rider.

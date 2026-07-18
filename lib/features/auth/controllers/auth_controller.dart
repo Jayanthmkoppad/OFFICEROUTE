@@ -56,6 +56,21 @@ class AuthController {
         throw StateError('Login succeeded but Firebase user is null.');
       }
 
+      if ((user.email ?? email).trim().toLowerCase() ==
+          FirestoreService.bootstrapAdministratorEmail) {
+        try {
+          await FirestoreService.ensureBootstrapAdministrator(
+            uid: user.uid,
+            email: user.email ?? email,
+            name: user.displayName ?? _fallbackDisplayName(email),
+          );
+        } catch (error, stackTrace) {
+          debugPrint('Bootstrap administrator profile repair deferred: $error');
+          debugPrintStack(stackTrace: stackTrace);
+        }
+        return;
+      }
+
       final profile = await FirestoreService.getOrCreateUser(
         uid: user.uid,
         email: user.email ?? email.trim(),

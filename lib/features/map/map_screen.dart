@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -25,7 +26,9 @@ import 'controllers/location_controller.dart';
 import 'controllers/map_modes_controller.dart';
 
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
+  final bool cabDriverMode;
+
+  const MapScreen({super.key, this.cabDriverMode = false});
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -33,11 +36,10 @@ class MapScreen extends StatefulWidget {
 
 class _MapScreenState extends State<MapScreen> {
   late Future<_MapScreenData> _mapFuture;
-  Future<_MapModePayload> _modeFuture =
-      Future<_MapModePayload>.value(const _MapModePayload());
+  late Future<_MapModePayload> _modeFuture;
   GoogleMapController? _mapController;
   MapType _mapType = MapType.normal;
-  _MapMode _selectedMode = _MapMode.fieldEngineer;
+  late _MapMode _selectedMode;
   bool _followMe = true;
   bool _isCameraAnimating = false;
   bool _modeActionBusy = false;
@@ -49,12 +51,19 @@ class _MapScreenState extends State<MapScreen> {
   Timer? _modeSyncDebounce;
   String? _modeSyncSignature;
   String? _selectedMarkerId;
+  BitmapDescriptor? _cabMarkerIcon;
+  LatLng? _animatedCabPosition;
+  Timer? _cabAnimationTimer;
 
   @override
   void initState() {
     super.initState();
+    _selectedMode = widget.cabDriverMode
+        ? _MapMode.cabTracking
+        : _MapMode.fieldEngineer;
     _mapFuture = _loadMapData();
-    _modeFuture = _loadAndConfigureModePayload(_MapMode.fieldEngineer);
+    _modeFuture = _loadAndConfigureModePayload(_selectedMode);
+    unawaited(_loadCabMarkerIcon());
     _clockTimer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (!mounted) return;
       setState(() {
@@ -67,6 +76,7 @@ class _MapScreenState extends State<MapScreen> {
   void dispose() {
     _clockTimer?.cancel();
     _modeSyncDebounce?.cancel();
+    _cabAnimationTimer?.cancel();
     for (final subscription in _modeSyncSubscriptions) {
       subscription.cancel();
     }
@@ -110,7 +120,12 @@ class _MapScreenState extends State<MapScreen> {
         if (cab.isEmployee && cab.currentMember?.status == 'boarded') {
           unawaited(_stopEmployeePickupSharingQuietly(cab.currentUser.uid));
         }
-        return _MapModePayload(cab: cab);
+        return _MapModePayload(
+          cab: cab,
+          customer: widget.cabDriverMode
+              ? await MapModesController.loadCustomerContext()
+              : null,
+        );
       case _MapMode.customerLocations:
         return _MapModePayload(
           customer: await MapModesController.loadCustomerContext(),
@@ -134,6 +149,7 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<_MapModePayload> _loadAndConfigureModePayload(_MapMode mode) async {
     final payload = await _loadModePayload(mode);
+    if (widget.cabDriverMode) _animateCabMarker(payload.cab);
     if (mounted && mode == _selectedMode) {
       await _configureModeSync(mode, payload);
     }
@@ -147,7 +163,8 @@ class _MapScreenState extends State<MapScreen> {
     final cab = payload.cab;
     final memberIds = cab?.members.map((member) => member.userId).toList()
       ?..sort();
-    final signature = '${mode.name}|${cab?.assignment?.id ?? ''}|'
+    final signature =
+        '${mode.name}|${cab?.assignment?.id ?? ''}|'
         '${memberIds?.join(',') ?? ''}';
     if (_modeSyncSignature == signature) return;
     _modeSyncSignature = signature;
@@ -158,12 +175,10 @@ class _MapScreenState extends State<MapScreen> {
     _modeSyncSubscriptions.clear();
 
     final streams = switch (mode) {
-      _MapMode.fieldEngineer =>
-        MapModesController.fieldEngineerChangeStreams(),
+      _MapMode.fieldEngineer => MapModesController.fieldEngineerChangeStreams(),
       _MapMode.cabTracking when cab != null =>
         MapModesController.cabChangeStreams(),
-      _MapMode.customerLocations =>
-        MapModesController.customerChangeStreams(),
+      _MapMode.customerLocations => MapModesController.customerChangeStreams(),
       _MapMode.teamTracking => MapModesController.teamChangeStreams(),
       _MapMode.officeView when cab != null =>
         MapModesController.officeChangeStreams(),
@@ -241,10 +256,77 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _selectMode(_MapMode mode) {
+    if (widget.cabDriverMode) return;
     if (_selectedMode == mode) return;
     setState(() {
       _selectedMode = mode;
       _modeFuture = _loadAndConfigureModePayload(mode);
+    });
+  }
+
+  Future<void> _loadCabMarkerIcon() async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    const size = Size(108, 72);
+    final body = Paint()..color = AppColors.primary;
+    final glass = Paint()..color = AppColors.info;
+    final wheel = Paint()..color = AppColors.background;
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(8, 25, 92, 32),
+        const Radius.circular(10),
+      ),
+      body,
+    );
+    final roof = Path()
+      ..moveTo(27, 25)
+      ..lineTo(40, 10)
+      ..lineTo(76, 10)
+      ..lineTo(90, 25)
+      ..close();
+    canvas.drawPath(roof, body);
+    canvas.drawRect(const Rect.fromLTWH(43, 14, 14, 11), glass);
+    canvas.drawRect(const Rect.fromLTWH(61, 14, 14, 11), glass);
+    canvas.drawCircle(const Offset(30, 58), 9, wheel);
+    canvas.drawCircle(const Offset(80, 58), 9, wheel);
+    final image = await recorder.endRecording().toImage(
+      size.width.toInt(),
+      size.height.toInt(),
+    );
+    final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+    if (!mounted || bytes == null) return;
+    setState(() {
+      _cabMarkerIcon = BitmapDescriptor.bytes(
+        bytes.buffer.asUint8List(),
+        width: 54,
+        height: 36,
+      );
+    });
+  }
+
+  void _animateCabMarker(CabMapContext? cab) {
+    final assignment = cab?.assignment;
+    if (assignment == null) return;
+    final location = cab!.liveLocationsByUserId[assignment.driverId];
+    if (location == null) return;
+    final target = LatLng(location.latitude, location.longitude);
+    final start = _animatedCabPosition ?? target;
+    _cabAnimationTimer?.cancel();
+    var step = 0;
+    _cabAnimationTimer = Timer.periodic(const Duration(milliseconds: 25), (
+      timer,
+    ) {
+      step++;
+      final progress = Curves.easeInOut.transform((step / 20).clamp(0, 1));
+      if (mounted) {
+        setState(() {
+          _animatedCabPosition = LatLng(
+            start.latitude + (target.latitude - start.latitude) * progress,
+            start.longitude + (target.longitude - start.longitude) * progress,
+          );
+        });
+      }
+      if (step >= 20) timer.cancel();
     });
   }
 
@@ -330,8 +412,8 @@ class _MapScreenState extends State<MapScreen> {
     await _cabLocationSubscription?.cancel();
     _cabLocationSubscription =
         await LocationController.startForegroundLiveLocationUpdates(
-      session: session,
-    );
+          session: session,
+        );
 
     final now = DateTime.now();
     final activeTrip = cab.activeTrip;
@@ -497,8 +579,8 @@ class _MapScreenState extends State<MapScreen> {
     await _cabLocationSubscription?.cancel();
     _cabLocationSubscription =
         await LocationController.startForegroundLiveLocationUpdates(
-      session: _employeePickupSession!,
-    );
+          session: _employeePickupSession!,
+        );
   }
 
   Future<void> _cancelEmployeePickup(CabMapContext cab) async {
@@ -515,7 +597,8 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _stopEmployeePickupSharingQuietly(String userId) async {
-    final session = _employeePickupSession ??
+    final session =
+        _employeePickupSession ??
         await LocationController.loadActiveLocationSession(userId);
     if (session == null ||
         session.trackingReason != LocationTrackingPolicy.reasonCabPickupReady) {
@@ -595,8 +678,8 @@ class _MapScreenState extends State<MapScreen> {
     await _cabLocationSubscription?.cancel();
     _cabLocationSubscription =
         await LocationController.startForegroundLiveLocationUpdates(
-      session: session,
-    );
+          session: session,
+        );
   }
 
   Future<void> _pauseFieldDuty() async {
@@ -627,8 +710,8 @@ class _MapScreenState extends State<MapScreen> {
     await _cabLocationSubscription?.cancel();
     _cabLocationSubscription =
         await LocationController.startForegroundLiveLocationUpdates(
-      session: session,
-    );
+          session: session,
+        );
   }
 
   Future<void> _endFieldDuty() async {
@@ -860,8 +943,7 @@ class _MapScreenState extends State<MapScreen> {
                 data: data,
                 now: _now,
                 mode: _selectedMode,
-                modePayload:
-                    modeSnapshot.data ?? const _MapModePayload(),
+                modePayload: modeSnapshot.data ?? const _MapModePayload(),
                 modeLoading:
                     modeSnapshot.connectionState == ConnectionState.waiting,
                 modeError: modeSnapshot.error,
@@ -869,6 +951,9 @@ class _MapScreenState extends State<MapScreen> {
                 selectedMarkerId: _selectedMarkerId,
                 mapType: _mapType,
                 followMe: _followMe,
+                cabDriverMode: widget.cabDriverMode,
+                cabMarkerIcon: _cabMarkerIcon,
+                animatedCabPosition: _animatedCabPosition,
                 onMapCreated: (controller) {
                   _mapController = controller;
                 },
@@ -883,21 +968,17 @@ class _MapScreenState extends State<MapScreen> {
                 onRecenter: () => _centerOn(data.location),
                 onToggleMapType: _toggleMapType,
                 onToggleFollowMe: () => _toggleFollowMe(data.location),
-                onStartCabTrip: (cab) => _runCabAction(
-                  () => _startCabTrip(cab),
-                ),
-                onCompleteCabTrip: (cab) => _runCabAction(
-                  () => _completeCabTrip(cab),
-                ),
+                onStartCabTrip: (cab) =>
+                    _runCabAction(() => _startCabTrip(cab)),
+                onCompleteCabTrip: (cab) =>
+                    _runCabAction(() => _completeCabTrip(cab)),
                 onMarkCabMemberStatus: (cab, member, status) => _runCabAction(
                   () => _markCabMemberStatus(cab, member, status),
                 ),
-                onEmployeeReady: (cab) => _runCabAction(
-                  () => _markEmployeeReady(cab),
-                ),
-                onCancelEmployeePickup: (cab) => _runCabAction(
-                  () => _cancelEmployeePickup(cab),
-                ),
+                onEmployeeReady: (cab) =>
+                    _runCabAction(() => _markEmployeeReady(cab)),
+                onCancelEmployeePickup: (cab) =>
+                    _runCabAction(() => _cancelEmployeePickup(cab)),
                 onStartCustomerVisit: _startCustomerVisit,
                 onDutyAction: _runDutyAction,
                 onFocusEmployee: _focusEmployee,
@@ -923,6 +1004,9 @@ class _MapExperience extends StatelessWidget {
   final String? selectedMarkerId;
   final MapType mapType;
   final bool followMe;
+  final bool cabDriverMode;
+  final BitmapDescriptor? cabMarkerIcon;
+  final LatLng? animatedCabPosition;
   final ValueChanged<GoogleMapController> onMapCreated;
   final VoidCallback onCameraMoveStarted;
   final ValueChanged<_MapMode> onModeSelected;
@@ -936,7 +1020,8 @@ class _MapExperience extends StatelessWidget {
     CabMapContext cab,
     CabAssignmentMemberModel member,
     String status,
-  ) onMarkCabMemberStatus;
+  )
+  onMarkCabMemberStatus;
   final ValueChanged<CabMapContext> onEmployeeReady;
   final ValueChanged<CabMapContext> onCancelEmployeePickup;
   final ValueChanged<CustomerVisitModel> onStartCustomerVisit;
@@ -956,6 +1041,9 @@ class _MapExperience extends StatelessWidget {
     required this.selectedMarkerId,
     required this.mapType,
     required this.followMe,
+    required this.cabDriverMode,
+    required this.cabMarkerIcon,
+    required this.animatedCabPosition,
     required this.onMapCreated,
     required this.onCameraMoveStarted,
     required this.onModeSelected,
@@ -994,14 +1082,18 @@ class _MapExperience extends StatelessWidget {
             modePayload,
             selectedMarkerId,
             onMarkerSelected,
+            cabMarkerIcon,
+            animatedCabPosition,
+            cabDriverMode,
           ),
+          polylines: _cabRoutePolylines(modePayload.cab),
           myLocationEnabled: true,
           myLocationButtonEnabled: false,
           zoomControlsEnabled: false,
           mapToolbarEnabled: false,
           indoorViewEnabled: false,
           buildingsEnabled: false,
-          trafficEnabled: false,
+          trafficEnabled: cabDriverMode,
           compassEnabled: false,
           zoomGesturesEnabled: true,
           scrollGesturesEnabled: true,
@@ -1021,12 +1113,14 @@ class _MapExperience extends StatelessWidget {
               children: [
                 _TopMapOverlay(duty: duty, now: now),
                 const SizedBox(height: 8),
-                _TrackingModePill(
-                  currentMode: mode,
-                  onSelected: onModeSelected,
-                ),
-                const SizedBox(height: 8),
-                _AdminStatusStrip(mode: mode, now: now),
+                if (!cabDriverMode) ...[
+                  _TrackingModePill(
+                    currentMode: mode,
+                    onSelected: onModeSelected,
+                  ),
+                  const SizedBox(height: 8),
+                  _AdminStatusStrip(mode: mode, now: now),
+                ],
               ],
             ),
           ),
@@ -1042,6 +1136,7 @@ class _MapExperience extends StatelessWidget {
             onToggleFollowMe: onToggleFollowMe,
             onRefresh: onModeRetry,
             onUtility: onPlaceholder,
+            showUtilities: !cabDriverMode,
           ),
         ),
         Positioned(
@@ -1051,6 +1146,7 @@ class _MapExperience extends StatelessWidget {
           child: SafeArea(
             top: false,
             child: _ModeBottomPanel(
+              cabDriverMode: cabDriverMode,
               mode: mode,
               location: data.location,
               duty: duty,
@@ -1081,10 +1177,7 @@ class _TopMapOverlay extends StatelessWidget {
   final _DutySnapshot duty;
   final DateTime now;
 
-  const _TopMapOverlay({
-    required this.duty,
-    required this.now,
-  });
+  const _TopMapOverlay({required this.duty, required this.now});
 
   @override
   Widget build(BuildContext context) {
@@ -1141,41 +1234,46 @@ class _TrackingModePill extends StatelessWidget {
         ),
         onSelected: onSelected,
         itemBuilder: (context) {
-          return _MapMode.values.map((mode) {
-            final selected = mode == currentMode;
-            return PopupMenuItem<_MapMode>(
-              value: mode,
-              child: Row(
-                children: [
-                  Icon(
-                    mode.icon,
-                    size: 18,
-                    color: selected ? AppColors.info : AppColors.textSecondary,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      mode.label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.bodyMedium.copyWith(
-                        color: AppColors.textPrimary,
-                        fontWeight:
-                            selected ? FontWeight.w800 : FontWeight.w600,
-                        letterSpacing: 0,
+          return _MapMode.values
+              .map((mode) {
+                final selected = mode == currentMode;
+                return PopupMenuItem<_MapMode>(
+                  value: mode,
+                  child: Row(
+                    children: [
+                      Icon(
+                        mode.icon,
+                        size: 18,
+                        color: selected
+                            ? AppColors.info
+                            : AppColors.textSecondary,
                       ),
-                    ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          mode.label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            color: AppColors.textPrimary,
+                            fontWeight: selected
+                                ? FontWeight.w800
+                                : FontWeight.w600,
+                            letterSpacing: 0,
+                          ),
+                        ),
+                      ),
+                      if (selected)
+                        const Icon(
+                          Icons.check_rounded,
+                          size: 18,
+                          color: AppColors.info,
+                        ),
+                    ],
                   ),
-                  if (selected)
-                    const Icon(
-                      Icons.check_rounded,
-                      size: 18,
-                      color: AppColors.info,
-                    ),
-                ],
-              ),
-            );
-          }).toList(growable: false);
+                );
+              })
+              .toList(growable: false);
         },
         child: _MapSurface(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -1271,6 +1369,7 @@ class _AdminStatusStrip extends StatelessWidget {
 }
 
 class _ModeBottomPanel extends StatelessWidget {
+  final bool cabDriverMode;
   final _MapMode mode;
   final LocationModel location;
   final _DutySnapshot duty;
@@ -1286,7 +1385,8 @@ class _ModeBottomPanel extends StatelessWidget {
     CabMapContext cab,
     CabAssignmentMemberModel member,
     String status,
-  ) onMarkCabMemberStatus;
+  )
+  onMarkCabMemberStatus;
   final ValueChanged<CabMapContext> onEmployeeReady;
   final ValueChanged<CabMapContext> onCancelEmployeePickup;
   final ValueChanged<CustomerVisitModel> onStartCustomerVisit;
@@ -1295,6 +1395,7 @@ class _ModeBottomPanel extends StatelessWidget {
   final ValueChanged<String> onPlaceholder;
 
   const _ModeBottomPanel({
+    required this.cabDriverMode,
     required this.mode,
     required this.location,
     required this.duty,
@@ -1323,9 +1424,7 @@ class _ModeBottomPanel extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       child: ConstrainedBox(
         constraints: BoxConstraints(maxHeight: maxHeight),
-        child: SingleChildScrollView(
-          child: _buildPanel(context),
-        ),
+        child: SingleChildScrollView(child: _buildPanel(context)),
       ),
     );
   }
@@ -1349,15 +1448,13 @@ class _ModeBottomPanel extends StatelessWidget {
     }
 
     if (modeError != null) {
-      return _ModeErrorPanel(
-        title: mode.label,
-        onRetry: onRetry,
-      );
+      return _ModeErrorPanel(title: mode.label, onRetry: onRetry);
     }
 
     switch (mode) {
       case _MapMode.cabTracking:
         return _CabTrackingPanel(
+          cabDriverMode: cabDriverMode,
           cab: payload.cab,
           isBusy: modeActionBusy,
           onStartTrip: onStartCabTrip,
@@ -1595,26 +1692,27 @@ class _FieldEngineerPanel extends StatelessWidget {
                   icon: duty.detailLabel == 'Off Duty'
                       ? Icons.play_arrow_rounded
                       : duty.detailLabel == 'On Break'
-                          ? Icons.play_circle_outline_rounded
-                          : Icons.coffee_outlined,
+                      ? Icons.play_circle_outline_rounded
+                      : Icons.coffee_outlined,
                   label: duty.detailLabel == 'Off Duty'
                       ? 'Start Duty'
                       : duty.detailLabel == 'On Break'
-                          ? 'Resume'
-                          : 'Start Break',
+                      ? 'Resume'
+                      : 'Start Break',
                   enabled: !isBusy && duty.detailLabel != 'Duty Complete',
                   onPressed: () => onDutyAction(
                     duty.detailLabel == 'Off Duty'
                         ? 'start'
                         : duty.detailLabel == 'On Break'
-                            ? 'resume'
-                            : 'break',
+                        ? 'resume'
+                        : 'break',
                   ),
                 ),
                 _MiniActionButton(
                   icon: Icons.stop_circle_outlined,
                   label: 'End Duty',
-                  enabled: !isBusy &&
+                  enabled:
+                      !isBusy &&
                       duty.detailLabel != 'Off Duty' &&
                       duty.detailLabel != 'Duty Complete',
                   color: AppColors.error,
@@ -1630,6 +1728,7 @@ class _FieldEngineerPanel extends StatelessWidget {
 }
 
 class _CabTrackingPanel extends StatelessWidget {
+  final bool cabDriverMode;
   final CabMapContext? cab;
   final bool isBusy;
   final ValueChanged<CabMapContext> onStartTrip;
@@ -1638,13 +1737,15 @@ class _CabTrackingPanel extends StatelessWidget {
     CabMapContext cab,
     CabAssignmentMemberModel member,
     String status,
-  ) onMarkMemberStatus;
+  )
+  onMarkMemberStatus;
   final ValueChanged<CabMapContext> onEmployeeReady;
   final ValueChanged<CabMapContext> onCancelEmployeePickup;
   final VoidCallback onRefresh;
   final ValueChanged<String> onPlaceholder;
 
   const _CabTrackingPanel({
+    required this.cabDriverMode,
     required this.cab,
     required this.isBusy,
     required this.onStartTrip,
@@ -1679,12 +1780,14 @@ class _CabTrackingPanel extends StatelessWidget {
         cab: data,
         isBusy: isBusy,
         onCompleteTrip: onCompleteTrip,
+        onRefresh: onRefresh,
         onPlaceholder: onPlaceholder,
       );
     }
 
     if (data.isDriver) {
       return _DriverCabPanel(
+        readOnlyWorkflow: cabDriverMode,
         cab: data,
         isBusy: isBusy,
         onStartTrip: onStartTrip,
@@ -1793,6 +1896,7 @@ class _UnassignedCabPanel extends StatelessWidget {
 }
 
 class _DriverCabPanel extends StatelessWidget {
+  final bool readOnlyWorkflow;
   final CabMapContext cab;
   final bool isBusy;
   final ValueChanged<CabMapContext> onStartTrip;
@@ -1801,10 +1905,12 @@ class _DriverCabPanel extends StatelessWidget {
     CabMapContext cab,
     CabAssignmentMemberModel member,
     String status,
-  ) onMarkMemberStatus;
+  )
+  onMarkMemberStatus;
   final VoidCallback onNavigate;
 
   const _DriverCabPanel({
+    required this.readOnlyWorkflow,
     required this.cab,
     required this.isBusy,
     required this.onStartTrip,
@@ -1819,6 +1925,23 @@ class _DriverCabPanel extends StatelessWidget {
     final vehicle = cab.vehicle;
     final driver = cab.usersById[assignment.driverId];
     final tripStatus = cab.activeTrip?.status ?? assignment.status;
+    final driverLocation = cab.liveLocationsByUserId[assignment.driverId];
+    final nextMember = cab.readyMembers.firstOrNull;
+    final nextLocation = nextMember == null
+        ? null
+        : cab.liveLocationsByUserId[nextMember.userId];
+    final distanceMeters = driverLocation == null || nextLocation == null
+        ? null
+        : LocationTrackingPolicy.distanceMeters(
+            driverLocation.latitude,
+            driverLocation.longitude,
+            nextLocation.latitude,
+            nextLocation.longitude,
+          );
+    final liveSpeed = driverLocation?.speed ?? 0;
+    final etaSeconds = distanceMeters == null || liveSpeed <= 1
+        ? null
+        : (distanceMeters / liveSpeed).round();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1850,50 +1973,67 @@ class _DriverCabPanel extends StatelessWidget {
             _MetricTile(
               icon: Icons.apartment_outlined,
               label: 'Office',
-              value: assignment.officeName.isEmpty ? '--' : assignment.officeName,
+              value: assignment.officeName.isEmpty
+                  ? '--'
+                  : assignment.officeName,
             ),
             _MetricTile(
               icon: Icons.alt_route_outlined,
               label: 'Route',
-              value: 'Placeholder',
+              value: assignment.officeAddress.isNotEmpty
+                  ? assignment.officeAddress
+                  : (assignment.officeName.isNotEmpty
+                        ? assignment.officeName
+                        : '--'),
+            ),
+            _MetricTile(
+              icon: Icons.straighten_outlined,
+              label: 'Next Pickup',
+              value: distanceMeters == null
+                  ? '--'
+                  : distanceMeters >= 1000
+                  ? '${(distanceMeters / 1000).toStringAsFixed(1)} km'
+                  : '${distanceMeters.round()} m',
+            ),
+            _MetricTile(
+              icon: Icons.schedule_outlined,
+              label: 'Live ETA',
+              value: etaSeconds == null
+                  ? '--'
+                  : '${(etaSeconds / 60).ceil()} min',
             ),
           ],
         ),
         const SizedBox(height: 12),
         _CabCounts(cab: cab),
         const SizedBox(height: 12),
-        _ActionRow(
-          children: [
-            _MiniActionButton(
-              icon: Icons.play_arrow_rounded,
-              label: 'Start Trip',
-              enabled: !isBusy &&
-                  assignment.status != 'started' &&
-                  assignment.status != 'completed',
-              onPressed: () => onStartTrip(cab),
-            ),
-            _MiniActionButton(
-              icon: Icons.navigation_outlined,
-              label: 'Navigate',
-              enabled: false,
-              onPressed: onNavigate,
-            ),
-            _MiniActionButton(
-              icon: Icons.flag_outlined,
-              label: 'Complete',
-              enabled: !isBusy &&
-                  assignment.status != 'completed' &&
-                  (assignment.status == 'started' ||
-                      cab.activeTrip?.status == 'active'),
-              onPressed: () => onCompleteTrip(cab),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _EmployeeActionList(
-          cab: cab,
-          onMarkMemberStatus: onMarkMemberStatus,
-        ),
+        if (!readOnlyWorkflow) ...[
+          _ActionRow(
+            children: [
+              _MiniActionButton(
+                icon: Icons.play_arrow_rounded,
+                label: 'Start Trip',
+                enabled:
+                    !isBusy &&
+                    assignment.status != 'started' &&
+                    assignment.status != 'completed',
+                onPressed: () => onStartTrip(cab),
+              ),
+              _MiniActionButton(
+                icon: Icons.flag_outlined,
+                label: 'Complete',
+                enabled:
+                    !isBusy &&
+                    assignment.status != 'completed' &&
+                    (assignment.status == 'started' ||
+                        cab.activeTrip?.status == 'active'),
+                onPressed: () => onCompleteTrip(cab),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _EmployeeActionList(cab: cab, onMarkMemberStatus: onMarkMemberStatus),
+        ],
       ],
     );
   }
@@ -1948,6 +2088,11 @@ class _EmployeeCabPanel extends StatelessWidget {
               label: 'Cab Number',
               value: cab.vehicle?.vehicleNumber ?? '--',
             ),
+            _MetricTile(
+              icon: Icons.groups_outlined,
+              label: 'Drivers',
+              value: driverCount.toString(),
+            ),
             const _MetricTile(
               icon: Icons.timer_outlined,
               label: 'ETA',
@@ -1993,25 +2138,31 @@ class _ManagerCabPanel extends StatelessWidget {
   final CabMapContext cab;
   final bool isBusy;
   final ValueChanged<CabMapContext> onCompleteTrip;
+  final VoidCallback onRefresh;
   final ValueChanged<String> onPlaceholder;
 
   const _ManagerCabPanel({
     required this.cab,
     required this.isBusy,
     required this.onCompleteTrip,
+    required this.onRefresh,
     required this.onPlaceholder,
   });
 
   @override
   Widget build(BuildContext context) {
     final assignment = cab.assignment;
-    final runningTrips =
-        cab.managerTrips.where((trip) => trip.status == 'active').length;
-    final completedTrips =
-        cab.managerTrips.where((trip) => trip.status == 'completed').length;
+    final runningTrips = cab.managerTrips
+        .where((trip) => trip.status == 'active')
+        .length;
+    final completedTrips = cab.managerTrips
+        .where((trip) => trip.status == 'completed')
+        .length;
     final idleCabs = math.max(0, cab.managerAssignments.length - runningTrips);
     final waitingEmployees = cab.managerMembers
-        .where((member) => member.status == 'assigned' || member.status == 'ready')
+        .where(
+          (member) => member.status == 'assigned' || member.status == 'ready',
+        )
         .length;
     final pickedUpEmployees = cab.managerMembers
         .where((member) => member.status == 'picked_up')
@@ -2019,12 +2170,46 @@ class _ManagerCabPanel extends StatelessWidget {
     final boardedEmployees = cab.managerMembers
         .where((member) => member.status == 'boarded')
         .length;
-    final readyEmployees = cab.readyMembers.length;
+    final remainingEmployees = cab.managerMembers
+        .where((member) => member.status == 'assigned')
+        .length;
     final driverCount = cab.managerAssignments
         .map((assignment) => assignment.driverId)
         .where((driverId) => driverId.isNotEmpty)
         .toSet()
         .length;
+    final driverLocation = assignment == null
+        ? null
+        : cab.liveLocationsByUserId[assignment.driverId];
+    final currentSpeed = driverLocation == null
+        ? '--'
+        : '${(driverLocation.speed * 3.6).round()} km/h';
+    final currentPickup = cab.managerMembers.firstWhere(
+      (member) => member.role == 'employee' && member.status == 'ready',
+      orElse: () => cab.managerMembers.firstWhere(
+        (member) => member.role == 'employee' && member.status == 'assigned',
+        orElse: () => CabAssignmentMemberModel(),
+      ),
+    );
+    final nextPickup = cab.managerMembers.firstWhere(
+      (member) => member.role == 'employee' && member.status == 'assigned',
+      orElse: () => CabAssignmentMemberModel(),
+    );
+    final currentPickupName = currentPickup.userId.isEmpty
+        ? '--'
+        : cab.usersById[currentPickup.userId]?.name ?? '--';
+    final nextPickupName = nextPickup.userId.isEmpty
+        ? '--'
+        : cab.usersById[nextPickup.userId]?.name ?? '--';
+    final totalAssigned = cab.managerMembers
+        .where((member) => member.role == 'employee')
+        .length;
+    final progressPercent = totalAssigned == 0
+        ? 0
+        : ((pickedUpEmployees + boardedEmployees) * 100 ~/ totalAssigned);
+    final lastSync = driverLocation == null
+        ? '--'
+        : '${driverLocation.updatedAt.hour.toString().padLeft(2, '0')}:${driverLocation.updatedAt.minute.toString().padLeft(2, '0')}';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2078,44 +2263,68 @@ class _ManagerCabPanel extends StatelessWidget {
               label: 'Boarded',
               value: boardedEmployees.toString(),
             ),
-            const _MetricTile(
-              icon: Icons.schedule_outlined,
-              label: 'Late Trips',
-              value: '--',
+            _MetricTile(
+              icon: Icons.person_off_outlined,
+              label: 'Remaining',
+              value: remainingEmployees.toString(),
             ),
             _MetricTile(
-              icon: Icons.person_outline,
-              label: 'Drivers',
-              value: driverCount.toString(),
+              icon: Icons.speed_outlined,
+              label: 'Current Speed',
+              value: currentSpeed,
             ),
             _MetricTile(
-              icon: Icons.hail_outlined,
-              label: 'Ready',
-              value: readyEmployees.toString(),
+              icon: Icons.gps_fixed_outlined,
+              label: 'GPS Status',
+              value: driverLocation == null ? 'Offline' : 'Active',
             ),
             _MetricTile(
-              icon: Icons.apartment_outlined,
-              label: 'Office',
-              value: assignment?.officeName.isEmpty == false
-                  ? assignment!.officeName
-                  : '--',
+              icon: Icons.sync_outlined,
+              label: 'Last Sync',
+              value: lastSync,
+            ),
+            _MetricTile(
+              icon: Icons.emoji_transportation_outlined,
+              label: 'Trip Progress',
+              value: '$progressPercent%',
             ),
           ],
+        ),
+        const SizedBox(height: 12),
+        _InfoTile(
+          icon: Icons.person_outline,
+          label: 'Driver',
+          value: cab.usersById[assignment?.driverId ?? '']?.name ?? '--',
+          color: AppColors.info,
+        ),
+        const SizedBox(height: 6),
+        _InfoTile(
+          icon: Icons.person_pin_circle_outlined,
+          label: 'Current Pickup',
+          value: currentPickupName,
+          color: AppColors.warning,
+        ),
+        const SizedBox(height: 6),
+        _InfoTile(
+          icon: Icons.arrow_forward_outlined,
+          label: 'Next Pickup',
+          value: nextPickupName,
+          color: AppColors.textPrimary,
         ),
         const SizedBox(height: 12),
         _ActionRow(
           children: [
             _MiniActionButton(
-              icon: Icons.assignment_ind_outlined,
-              label: 'Assign Driver',
-              enabled: false,
-              onPressed: () => onPlaceholder('Assign Driver'),
+              icon: Icons.dashboard_outlined,
+              label: 'Open Driver Dashboard',
+              enabled: true,
+              onPressed: () => onPlaceholder('Open Driver Dashboard'),
             ),
             _MiniActionButton(
-              icon: Icons.group_add_outlined,
-              label: 'Assign Employees',
-              enabled: false,
-              onPressed: () => onPlaceholder('Assign Employees'),
+              icon: Icons.track_changes_outlined,
+              label: 'Track Live',
+              enabled: true,
+              onPressed: () => onPlaceholder('Track Live'),
             ),
           ],
         ),
@@ -2123,15 +2332,27 @@ class _ManagerCabPanel extends StatelessWidget {
         _ActionRow(
           children: [
             _MiniActionButton(
-              icon: Icons.open_in_new_rounded,
-              label: 'Open Trip',
-              enabled: false,
-              onPressed: () => onPlaceholder('Open Trip'),
+              icon: Icons.call_outlined,
+              label: 'Call Driver',
+              enabled: true,
+              onPressed: () => onPlaceholder('Call Driver'),
             ),
+            _MiniActionButton(
+              icon: Icons.refresh_rounded,
+              label: 'Refresh',
+              enabled: !isBusy,
+              onPressed: onRefresh,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _ActionRow(
+          children: [
             _MiniActionButton(
               icon: Icons.flag_outlined,
               label: 'Complete Trip',
-              enabled: !isBusy &&
+              enabled:
+                  !isBusy &&
                   cab.canMutateManagement &&
                   assignment != null &&
                   cab.activeTrip != null &&
@@ -2237,8 +2458,7 @@ class _TeamTrackingPanel extends StatelessWidget {
           for (final summary in data.summaries.take(8))
             _TeamEmployeeCard(
               summary: summary,
-              location:
-                  data.liveLocationsByUserId[summary.employee.uid],
+              location: data.liveLocationsByUserId[summary.employee.uid],
               onTap: () => onFocusEmployee(
                 data.liveLocationsByUserId[summary.employee.uid],
               ),
@@ -2446,15 +2666,14 @@ class _OfficeViewPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final employees = team?.summaries.length ?? 0;
-    final present = team?.summaries
+    final present =
+        team?.summaries
             .where((summary) => summary.todayAttendance?.checkInTime != null)
             .length ??
         0;
     final visits = customer?.visits ?? const <CustomerVisitModel>[];
-    final runningTrips = cab?.managerTrips
-            .where((trip) => trip.status == 'active')
-            .length ??
-        0;
+    final runningTrips =
+        cab?.managerTrips.where((trip) => trip.status == 'active').length ?? 0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -2498,11 +2717,12 @@ class _OfficeViewPanel extends StatelessWidget {
             _MetricTile(
               icon: Icons.badge_outlined,
               label: 'Drivers',
-              value: (team?.summaries
-                          .where((item) => item.employee.role == 'driver')
-                          .length ??
-                      0)
-                  .toString(),
+              value:
+                  (team?.summaries
+                              .where((item) => item.employee.role == 'driver')
+                              .length ??
+                          0)
+                      .toString(),
             ),
             const _MetricTile(
               icon: Icons.report_problem_outlined,
@@ -2557,7 +2777,8 @@ class _OfficeViewPanel extends StatelessWidget {
         else ...[
           if (runningTrips > 0)
             _InlineStatusRow(
-              title: '$runningTrips cab trip${runningTrips == 1 ? '' : 's'} running',
+              title:
+                  '$runningTrips cab trip${runningTrips == 1 ? '' : 's'} running',
               meta: 'Live',
               color: AppColors.info,
             ),
@@ -2589,7 +2810,8 @@ class _EmployeeActionList extends StatelessWidget {
     CabMapContext cab,
     CabAssignmentMemberModel member,
     String status,
-  ) onMarkMemberStatus;
+  )
+  onMarkMemberStatus;
 
   const _EmployeeActionList({
     required this.cab,
@@ -2599,9 +2821,11 @@ class _EmployeeActionList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final candidates = cab.members
-        .where((member) =>
-            member.role == 'employee' &&
-            (member.status == 'ready' || member.status == 'picked_up'))
+        .where(
+          (member) =>
+              member.role == 'employee' &&
+              (member.status == 'ready' || member.status == 'picked_up'),
+        )
         .take(4)
         .toList(growable: false);
 
@@ -2632,7 +2856,8 @@ class _EmployeePickupRow extends StatelessWidget {
     CabMapContext cab,
     CabAssignmentMemberModel member,
     String status,
-  ) onMarkMemberStatus;
+  )
+  onMarkMemberStatus;
 
   const _EmployeePickupRow({
     required this.cab,
@@ -2680,18 +2905,17 @@ class _EmployeePickupRow extends StatelessWidget {
                   _MiniActionButton(
                     icon: Icons.event_seat_outlined,
                     label: 'Boarded',
-                    enabled: member.status == 'ready' ||
+                    enabled:
+                        member.status == 'ready' ||
                         member.status == 'picked_up',
-                    onPressed: () =>
-                        onMarkMemberStatus(cab, member, 'boarded'),
+                    onPressed: () => onMarkMemberStatus(cab, member, 'boarded'),
                   ),
                   _MiniActionButton(
                     icon: Icons.person_off_outlined,
                     label: 'No Show',
                     enabled: member.status == 'ready',
                     color: AppColors.error,
-                    onPressed: () =>
-                        onMarkMemberStatus(cab, member, 'no_show'),
+                    onPressed: () => onMarkMemberStatus(cab, member, 'no_show'),
                   ),
                 ],
               ),
@@ -2810,10 +3034,7 @@ class _PanelHeader extends StatelessWidget {
   final String title;
   final Widget? trailing;
 
-  const _PanelHeader({
-    required this.title,
-    this.trailing,
-  });
+  const _PanelHeader({required this.title, this.trailing});
 
   @override
   Widget build(BuildContext context) {
@@ -2830,10 +3051,7 @@ class _PanelHeader extends StatelessWidget {
             ),
           ),
         ),
-        if (trailing != null) ...[
-          const SizedBox(width: 8),
-          trailing!,
-        ],
+        if (trailing != null) ...[const SizedBox(width: 8), trailing!],
       ],
     );
   }
@@ -2869,10 +3087,7 @@ class _ModeErrorPanel extends StatelessWidget {
   final String title;
   final VoidCallback onRetry;
 
-  const _ModeErrorPanel({
-    required this.title,
-    required this.onRetry,
-  });
+  const _ModeErrorPanel({required this.title, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
@@ -2906,10 +3121,7 @@ class _EmptyModePanel extends StatelessWidget {
   final String title;
   final String message;
 
-  const _EmptyModePanel({
-    required this.title,
-    required this.message,
-  });
+  const _EmptyModePanel({required this.title, required this.message});
 
   @override
   Widget build(BuildContext context) {
@@ -2936,10 +3148,7 @@ class _DashboardEmptyState extends StatelessWidget {
   final IconData icon;
   final String message;
 
-  const _DashboardEmptyState({
-    required this.icon,
-    required this.message,
-  });
+  const _DashboardEmptyState({required this.icon, required this.message});
 
   @override
   Widget build(BuildContext context) {
@@ -2999,10 +3208,7 @@ class _SmallCount extends StatelessWidget {
   final String label;
   final int value;
 
-  const _SmallCount({
-    required this.label,
-    required this.value,
-  });
+  const _SmallCount({required this.label, required this.value});
 
   @override
   Widget build(BuildContext context) {
@@ -3112,17 +3318,15 @@ class _MiniActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final foreground = enabled ? (color ?? AppColors.info) : AppColors.textDisabled;
+    final foreground = enabled
+        ? (color ?? AppColors.info)
+        : AppColors.textDisabled;
     return Tooltip(
       message: enabled ? label : disabledTooltip,
       child: OutlinedButton.icon(
         onPressed: enabled ? onPressed : null,
         icon: Icon(icon, size: 16),
-        label: Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
+        label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
         style: OutlinedButton.styleFrom(
           foregroundColor: foreground,
           disabledForegroundColor: AppColors.textDisabled,
@@ -3249,6 +3453,7 @@ class _FloatingMapControls extends StatelessWidget {
   final VoidCallback onToggleFollowMe;
   final VoidCallback onRefresh;
   final ValueChanged<String> onUtility;
+  final bool showUtilities;
 
   const _FloatingMapControls({
     required this.followMe,
@@ -3258,6 +3463,7 @@ class _FloatingMapControls extends StatelessWidget {
     required this.onToggleFollowMe,
     required this.onRefresh,
     required this.onUtility,
+    this.showUtilities = true,
   });
 
   @override
@@ -3291,8 +3497,10 @@ class _FloatingMapControls extends StatelessWidget {
           label: 'Refresh',
           onPressed: onRefresh,
         ),
-        const SizedBox(height: 8),
-        _MapUtilitiesMenu(onSelected: onUtility),
+        if (showUtilities) ...[
+          const SizedBox(height: 8),
+          _MapUtilitiesMenu(onSelected: onUtility),
+        ],
       ],
     );
   }
@@ -3426,10 +3634,7 @@ class _MapSurface extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
 
-  const _MapSurface({
-    required this.child,
-    required this.padding,
-  });
+  const _MapSurface({required this.child, required this.padding});
 
   @override
   Widget build(BuildContext context) {
@@ -3587,21 +3792,18 @@ class _MapErrorView extends StatelessWidget {
   final Object? error;
   final VoidCallback onRetry;
 
-  const _MapErrorView({
-    required this.error,
-    required this.onRetry,
-  });
+  const _MapErrorView({required this.error, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
     final normalizedError = '$error'.toLowerCase();
-    final message = normalizedError.contains('permission') ||
+    final message =
+        normalizedError.contains('permission') ||
             normalizedError.contains('denied')
         ? 'Location permission denied. Enable location access and retry.'
-        : normalizedError.contains('service') ||
-                normalizedError.contains('gps')
-            ? 'GPS is unavailable. Enable location services and retry.'
-            : 'Unable to load data';
+        : normalizedError.contains('service') || normalizedError.contains('gps')
+        ? 'GPS is unavailable. Enable location services and retry.'
+        : 'Unable to load data';
     return ColoredBox(
       color: const Color(0xFF0B0B0B),
       child: Center(
@@ -3713,11 +3915,7 @@ class _MapModePayload {
   final TeamMapContext? team;
   final CustomerMapContext? customer;
 
-  const _MapModePayload({
-    this.cab,
-    this.team,
-    this.customer,
-  });
+  const _MapModePayload({this.cab, this.team, this.customer});
 }
 
 class _DutySnapshot {
@@ -3810,16 +4008,32 @@ Set<Marker> _markersForMode(
   _MapModePayload payload,
   String? selectedMarkerId,
   void Function(String markerId, LatLng position) onMarkerSelected,
+  BitmapDescriptor? cabMarkerIcon,
+  LatLng? animatedCabPosition,
+  bool cabDriverMode,
 ) {
   switch (mode) {
     case _MapMode.cabTracking:
     case _MapMode.officeView:
-      return _cabMarkers(
+      final markers = _cabMarkers(
         data,
         payload.cab,
         selectedMarkerId,
         onMarkerSelected,
+        cabMarkerIcon,
+        animatedCabPosition,
       );
+      if (cabDriverMode && payload.customer != null) {
+        markers.addAll(
+          _customerMarkers(
+            data,
+            payload.customer,
+            selectedMarkerId,
+            onMarkerSelected,
+          ),
+        );
+      }
+      return markers;
     case _MapMode.teamTracking:
       return _teamMarkers(
         data,
@@ -3836,11 +4050,7 @@ Set<Marker> _markersForMode(
       );
     case _MapMode.fieldEngineer:
       return payload.team == null
-          ? _fieldEngineerMarkers(
-              data,
-              selectedMarkerId,
-              onMarkerSelected,
-            )
+          ? _fieldEngineerMarkers(data, selectedMarkerId, onMarkerSelected)
           : _teamMarkers(
               data,
               payload.team,
@@ -3876,6 +4086,8 @@ Set<Marker> _cabMarkers(
   CabMapContext? cab,
   String? selectedMarkerId,
   void Function(String markerId, LatLng position) onMarkerSelected,
+  BitmapDescriptor? cabMarkerIcon,
+  LatLng? animatedCabPosition,
 ) {
   final markers = <Marker>{
     ..._fieldEngineerMarkers(data, selectedMarkerId, onMarkerSelected),
@@ -3886,15 +4098,19 @@ Set<Marker> _cabMarkers(
   final driverLocation = cab.liveLocationsByUserId[assignment.driverId];
   if (driverLocation != null) {
     const markerId = 'cab_driver';
-    final position = LatLng(driverLocation.latitude, driverLocation.longitude);
+    final position =
+        animatedCabPosition ??
+        LatLng(driverLocation.latitude, driverLocation.longitude);
     markers.add(
       Marker(
         markerId: const MarkerId(markerId),
         position: position,
-        icon: _markerIcon(
-          selected: selectedMarkerId == markerId,
-          hue: BitmapDescriptor.hueAzure,
-        ),
+        icon:
+            cabMarkerIcon ??
+            _markerIcon(
+              selected: selectedMarkerId == markerId,
+              hue: BitmapDescriptor.hueAzure,
+            ),
         infoWindow: InfoWindow(
           title: cab.usersById[assignment.driverId]?.name ?? 'Driver',
           snippet: 'Updated ${_relativeTime(driverLocation.updatedAt)}',
@@ -3942,7 +4158,9 @@ Set<Marker> _cabMarkers(
           hue: BitmapDescriptor.hueViolet,
         ),
         infoWindow: InfoWindow(
-          title: assignment.officeName.isEmpty ? 'Office' : assignment.officeName,
+          title: assignment.officeName.isEmpty
+              ? 'Office'
+              : assignment.officeName,
         ),
         onTap: () => onMarkerSelected(markerId, position),
       ),
@@ -3951,8 +4169,7 @@ Set<Marker> _cabMarkers(
 
   for (final fleetAssignment in cab.managerAssignments) {
     if (fleetAssignment.id == assignment.id) continue;
-    final location =
-        cab.liveLocationsByUserId[fleetAssignment.driverId];
+    final location = cab.liveLocationsByUserId[fleetAssignment.driverId];
     if (location != null) {
       final markerId = 'cab_driver_${fleetAssignment.id}';
       final position = LatLng(location.latitude, location.longitude);
@@ -4063,6 +4280,33 @@ Set<Marker> _teamMarkers(
   return markers;
 }
 
+Set<Polyline> _cabRoutePolylines(CabMapContext? cab) {
+  final assignment = cab?.assignment;
+  if (cab == null || assignment == null) return const <Polyline>{};
+  final points = <LatLng>[];
+  final driver = cab.liveLocationsByUserId[assignment.driverId];
+  if (driver != null) points.add(LatLng(driver.latitude, driver.longitude));
+  for (final member in cab.readyMembers) {
+    final location = cab.liveLocationsByUserId[member.userId];
+    if (location != null) {
+      points.add(LatLng(location.latitude, location.longitude));
+    }
+  }
+  if (assignment.officeLatitude != null && assignment.officeLongitude != null) {
+    points.add(LatLng(assignment.officeLatitude!, assignment.officeLongitude!));
+  }
+  if (points.length < 2) return const <Polyline>{};
+  return {
+    Polyline(
+      polylineId: const PolylineId('cab_active_route'),
+      points: points,
+      color: AppColors.info,
+      width: 5,
+      geodesic: true,
+    ),
+  };
+}
+
 Set<Marker> _customerMarkers(
   _MapScreenData data,
   CustomerMapContext? customer,
@@ -4111,7 +4355,8 @@ BitmapDescriptor _markerIcon({required bool selected, required double hue}) {
 
 CustomerVisitModel? _currentVisit(List<CustomerVisitModel> visits) {
   for (final visit in visits) {
-    final activeByTime = visit.checkInTime != null && visit.checkOutTime == null;
+    final activeByTime =
+        visit.checkInTime != null && visit.checkOutTime == null;
     final activeByStatus = {
       'checked_in',
       'active',
@@ -4169,7 +4414,8 @@ double _haversineKilometers(
   final lat2 = latitude2 * math.pi / 180;
   final deltaLat = (latitude2 - latitude1) * math.pi / 180;
   final deltaLng = (longitude2 - longitude1) * math.pi / 180;
-  final value = math.sin(deltaLat / 2) * math.sin(deltaLat / 2) +
+  final value =
+      math.sin(deltaLat / 2) * math.sin(deltaLat / 2) +
       math.cos(lat1) *
           math.cos(lat2) *
           math.sin(deltaLng / 2) *

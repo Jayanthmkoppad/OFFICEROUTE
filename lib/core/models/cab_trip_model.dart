@@ -43,6 +43,10 @@ class CabTripModel {
 
   /// Internal remarks for operations.
   final String remarks;
+  final double distanceKm;
+  final int durationSeconds;
+  final int drivingSeconds;
+  final int idleSeconds;
 
   /// Creates a cab trip model.
   const CabTripModel({
@@ -59,6 +63,10 @@ class CabTripModel {
     this.completedAt,
     this.updatedAt,
     this.remarks = '',
+    this.distanceKm = 0,
+    this.durationSeconds = 0,
+    this.drivingSeconds = 0,
+    this.idleSeconds = 0,
   });
 
   /// Creates a trip model from a Firestore document map.
@@ -70,14 +78,18 @@ class CabTripModel {
       driverId: (map['driverId'] ?? '').toString(),
       vehicleId: (map['vehicleId'] ?? '').toString(),
       status: (map['status'] ?? 'created').toString(),
-      activeLocationSessionId:
-          (map['activeLocationSessionId'] ?? '').toString(),
+      activeLocationSessionId: (map['activeLocationSessionId'] ?? '')
+          .toString(),
       createdAt: _parseDateTime(map['createdAt']),
       startedAt: _parseDateTime(map['startedAt']),
       officeArrivedAt: _parseDateTime(map['officeArrivedAt']),
       completedAt: _parseDateTime(map['completedAt']),
       updatedAt: _parseDateTime(map['updatedAt']),
       remarks: (map['remarks'] ?? '').toString(),
+      distanceKm: _parseDouble(map['distanceKm']),
+      durationSeconds: _parseInt(map['durationSeconds']),
+      drivingSeconds: _parseInt(map['drivingSeconds']),
+      idleSeconds: _parseInt(map['idleSeconds']),
     );
   }
 
@@ -100,6 +112,10 @@ class CabTripModel {
           : Timestamp.fromDate(completedAt!),
       'updatedAt': updatedAt == null ? null : Timestamp.fromDate(updatedAt!),
       'remarks': remarks,
+      'distanceKm': distanceKm,
+      'durationSeconds': durationSeconds,
+      'drivingSeconds': drivingSeconds,
+      'idleSeconds': idleSeconds,
     };
   }
 
@@ -118,6 +134,10 @@ class CabTripModel {
     DateTime? completedAt,
     DateTime? updatedAt,
     String? remarks,
+    double? distanceKm,
+    int? durationSeconds,
+    int? drivingSeconds,
+    int? idleSeconds,
   }) {
     return CabTripModel(
       id: id ?? this.id,
@@ -134,6 +154,10 @@ class CabTripModel {
       completedAt: completedAt ?? this.completedAt,
       updatedAt: updatedAt ?? this.updatedAt,
       remarks: remarks ?? this.remarks,
+      distanceKm: distanceKm ?? this.distanceKm,
+      durationSeconds: durationSeconds ?? this.durationSeconds,
+      drivingSeconds: drivingSeconds ?? this.drivingSeconds,
+      idleSeconds: idleSeconds ?? this.idleSeconds,
     );
   }
 
@@ -145,5 +169,15 @@ class CabTripModel {
       return DateTime.tryParse(value);
     }
     return null;
+  }
+
+  static double _parseDouble(Object? value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse('$value') ?? 0;
+  }
+
+  static int _parseInt(Object? value) {
+    if (value is num) return value.round();
+    return int.tryParse('$value') ?? 0;
   }
 }

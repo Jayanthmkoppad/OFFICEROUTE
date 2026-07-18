@@ -1,5 +1,67 @@
 # CHANGELOG
 
+## 2026-07-16 - Enterprise Profile Final Pass
+
+Changed:
+
+- Consolidated personal and organization operations into the Enterprise Profile entry point.
+- Reused one organization listener for users, attendance, visits, and live locations; notification streams remain user-scoped.
+- Added organization KPIs, employee-directory preview, compact comparison charts, top engineers/branches, operational ranks, and rule-based organization summary.
+- Added monthly, quarterly, yearly, and Today/Week/Month performance calculations with trend indicators.
+- Added current activity, carry-forward visits, recent notifications, complaints, and task dependency state.
+- Completed account-health indicators and navigation-only admin shortcuts.
+- Removed duplicate and out-of-scope Profile sections and dead notification/action builders.
+
+Preserved:
+
+- No Firestore collections, persistent models, upload services, Phase 3 modules, or external AI integrations were added.
+- Flutter analyze, test, and run were not executed per instruction.
+
+## 2026-07-16 - Phase 1 Completion and Phase 2 Entry
+
+Changed:
+
+- Extended the existing user model and `users` documents with approved employee profile metadata and preferences.
+- Added realtime profile-detail editing, experience and completion calculations, missing-field health, and persisted runtime theme-mode infrastructure.
+- Added Organization Administration using existing employee, attendance, visit, and live-location data.
+- Added workforce metrics, enterprise directory controls, employee operational detail, analytics, branch/department comparisons, and admin navigation shortcuts.
+
+Created:
+
+- Organization operations service, controller, and administration screen.
+
+Blocked:
+
+- Personal/organization documents and profile-photo upload require absent Firebase Storage/document/picker/cropper architecture.
+- Biometrics and full runtime localization require absent plugins/resources.
+- Company configuration, shifts, holidays, policies, and organization rules require approved owning backends.
+- Existing hard-coded module colors still need a dedicated theme-fidelity pass for complete Light-mode presentation.
+
+Validation:
+
+- Flutter analyze, test, and run were intentionally not executed per task instruction.
+
+## 2026-07-16
+
+### Enterprise Profile Module - Phase 1
+
+Changed:
+
+- Expanded Profile into a realtime Personal Operations Center.
+- Aggregated existing users, attendance, customer visits, notifications, notification preferences, complaints, reports, live location, and location-permission data.
+- Added compact responsive KPI navigation, performance ranges, personal operations, rule-based smart summary, notification preview/actions, activity timeline, settings, account health, and admin navigation shortcuts.
+- Added safe partial phone updates to the existing `users` collection and realtime watchers for existing user and notification records.
+
+Preserved:
+
+- No new Firestore collections or persistent models were created.
+- No organization, branch, fleet, system administration, RBAC, device management, automation, integrations, or audit-log functionality was added.
+
+TODO:
+
+- Documents, reimbursements, approvals, messages, device telemetry, organization ranking, and extended employee metadata remain blocked by missing owning backends.
+- Flutter analyze, test, and run were intentionally not executed per task instruction.
+
 ## 2026-07-12
 
 ### Map UI Foundation Complete

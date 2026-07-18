@@ -108,6 +108,27 @@ class CabTripService {
     }
   }
 
+  /// Loads all trips assigned to one driver without duplicating trip data.
+  static Future<List<CabTripModel>> fetchTripsForDriver(String driverId) async {
+    final snapshot = await _collection
+        .where('driverId', isEqualTo: driverId)
+        .get();
+    final trips = snapshot.docs
+        .map((doc) => CabTripModel.fromMap(doc.data(), id: doc.id))
+        .toList();
+    trips.sort(_compareTripsNewestFirst);
+    return trips;
+  }
+
+  static Future<List<CabTripModel>> fetchAllTrips() async {
+    final snapshot = await _collection.get();
+    final trips = snapshot.docs
+        .map((doc) => CabTripModel.fromMap(doc.data(), id: doc.id))
+        .toList();
+    trips.sort(_compareTripsNewestFirst);
+    return trips;
+  }
+
   /// Emits when a cab trip for [dateKey] changes.
   static Stream<void> watchTripsForDate(String dateKey) {
     return _collection
@@ -124,6 +145,16 @@ class CabTripService {
         .map<void>((_) {});
   }
 
+  static Stream<void> watchTripsForDriver(String driverId) {
+    return _collection
+        .where('driverId', isEqualTo: driverId)
+        .snapshots()
+        .map<void>((_) {});
+  }
+
+  static Stream<void> watchAllTrips() =>
+      _collection.snapshots().map<void>((_) {});
+
   /// Writes or replaces a rider document under a trip.
   static Future<void> upsertRider(CabTripRiderModel rider) async {
     if (rider.tripId.isEmpty) {
@@ -136,7 +167,7 @@ class CabTripService {
           .doc(rider.tripId)
           .collection('riders')
           .doc(id)
-          .set(rider.toMap());
+          .set(rider.toMap(), SetOptions(merge: true));
     } catch (error, stackTrace) {
       _printFirestoreException(
         error: error,
@@ -145,6 +176,46 @@ class CabTripService {
       );
       rethrow;
     }
+  }
+
+  static Future<void> updateRiderFields({
+    required String tripId,
+    required String riderId,
+    required Map<String, Object?> fields,
+  }) {
+    return _collection.doc(tripId).collection('riders').doc(riderId).set(
+      <String, Object?>{...fields, 'updatedAt': Timestamp.now()},
+      SetOptions(merge: true),
+    );
+  }
+
+  static Stream<void> watchRiders(String tripId) {
+    return _collection
+        .doc(tripId)
+        .collection('riders')
+        .snapshots()
+        .map<void>((_) {});
+  }
+
+  static Future<List<CabTripEventModel>> fetchEvents(String tripId) async {
+    final snapshot = await _collection.doc(tripId).collection('events').get();
+    final events = snapshot.docs
+        .map((doc) => CabTripEventModel.fromMap(doc.data(), id: doc.id))
+        .toList();
+    events.sort(
+      (a, b) => (b.createdAt ?? DateTime(1970)).compareTo(
+        a.createdAt ?? DateTime(1970),
+      ),
+    );
+    return events;
+  }
+
+  static Stream<void> watchEvents(String tripId) {
+    return _collection
+        .doc(tripId)
+        .collection('events')
+        .snapshots()
+        .map<void>((_) {});
   }
 
   /// Loads rider documents under a trip.
@@ -205,13 +276,9 @@ class CabTripService {
     debugPrint('Stack trace:\n$stackTrace');
   }
 
-  static int _compareTripsNewestFirst(
-    CabTripModel left,
-    CabTripModel right,
-  ) {
+  static int _compareTripsNewestFirst(CabTripModel left, CabTripModel right) {
     final leftTime = left.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
-    final rightTime =
-        right.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
+    final rightTime = right.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0);
     return rightTime.compareTo(leftTime);
   }
 }

@@ -2,9 +2,14 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../core/models/live_location_model.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/premium_widgets.dart';
+import '../customer_visits/models/customer_visit_model.dart';
+import '../manager/models/manager_employee_summary_model.dart';
+import '../reports/reports_screen.dart';
+import 'attendance_operations_dashboard.dart';
 import 'controllers/attendance_controller.dart';
 import 'models/attendance_model.dart';
 
@@ -18,13 +23,41 @@ class AttendanceScreen extends StatefulWidget {
 class _AttendanceScreenState extends State<AttendanceScreen> {
   late Future<_AttendanceViewData> _attendanceFuture;
   DateTime _visibleMonth = DateTime(DateTime.now().year, DateTime.now().month);
+  DateTime _selectedOperationsDate = DateTime(
+    DateTime.now().year,
+    DateTime.now().month,
+    DateTime.now().day,
+  );
   Timer? _clockTimer;
+  Timer? _realtimeDebounce;
+  Timer? _liveLocationDebounce;
+  final List<StreamSubscription<void>> _realtimeSubscriptions = [];
+  StreamSubscription<List<LiveLocationModel>>? _liveLocationSubscription;
+  Future<void>? _reloadInFlight;
+  _AttendanceViewData? _latestData;
+  Map<String, LiveLocationModel> _liveLocationsByUserId = const {};
+  bool _liveLocationsLoaded = false;
+  int _realtimeGeneration = 0;
   bool _isRunningAction = false;
+  bool _isRefreshing = false;
+  bool _isRealtimeConnected = false;
 
   @override
   void initState() {
     super.initState();
-    _attendanceFuture = _loadAttendance();
+    final initialLoad = _loadAttendance();
+    _attendanceFuture = initialLoad;
+    late final Future<void> trackedLoad;
+    trackedLoad = initialLoad.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {},
+    ).whenComplete(() {
+      if (identical(_reloadInFlight, trackedLoad)) {
+        _reloadInFlight = null;
+      }
+    });
+    _reloadInFlight = trackedLoad;
+    unawaited(_subscribeToRealtime());
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (!mounted) return;
       setState(() {});
@@ -34,25 +67,114 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   @override
   void dispose() {
     _clockTimer?.cancel();
+    _realtimeDebounce?.cancel();
+    _liveLocationDebounce?.cancel();
+    for (final subscription in _realtimeSubscriptions) {
+      unawaited(subscription.cancel());
+    }
+    unawaited(_liveLocationSubscription?.cancel());
     super.dispose();
   }
 
-  Future<_AttendanceViewData> _loadAttendance() async {
-    final todayFuture = AttendanceController.loadTodayAttendance();
-    final monthFuture = AttendanceController.loadAttendanceForMonth(_visibleMonth);
+  Future<_AttendanceViewData> _loadAttendance({
+    bool personalMonthOnly = false,
+  }) async {
+    final cached = _latestData;
+    if (personalMonthOnly && cached != null) {
+      final updated = cached.copyWith(
+        monthRecords:
+            await AttendanceController.loadAttendanceForMonth(_visibleMonth),
+      );
+      _latestData = updated;
+      return updated;
+    }
 
-    return _AttendanceViewData(
-      today: await todayFuture,
-      monthRecords: await monthFuture,
+    final operationsFuture = AttendanceController.loadOperationsForDate(
+      _selectedOperationsDate,
     );
+    final previousAttendanceFuture =
+        AttendanceController.loadOperationsAttendanceForDate(
+      _selectedOperationsDate.subtract(const Duration(days: 1)),
+    );
+    final operationsMonthFuture = AttendanceController.loadOperationsForMonth(
+      _selectedOperationsDate,
+    );
+
+    final operations = await operationsFuture;
+    final operationsMonth = await operationsMonthFuture;
+    final previousAttendance = await previousAttendanceFuture;
+    final currentUserId = AttendanceController.currentUserId;
+    final selectedIsToday = DateUtils.isSameDay(
+      _selectedOperationsDate,
+      DateTime.now(),
+    );
+    final visibleIsOperationsMonth =
+        _visibleMonth.year == _selectedOperationsDate.year &&
+            _visibleMonth.month == _selectedOperationsDate.month;
+
+    final today = selectedIsToday
+        ? _latestRecordForUser(operations.attendance, currentUserId)
+        : await AttendanceController.loadTodayAttendance();
+    final monthRecords = visibleIsOperationsMonth && currentUserId != null
+        ? operationsMonth
+            .where((record) => record.userId == currentUserId)
+            .toList(growable: false)
+        : await AttendanceController.loadAttendanceForMonth(_visibleMonth);
+
+    final data = _AttendanceViewData(
+      operationsDate: _selectedOperationsDate,
+      today: today,
+      monthRecords: monthRecords,
+      employeeSummaries: operations.employees,
+      operationsAttendance: operations.attendance,
+      previousAttendance: previousAttendance,
+      operationsMonthAttendance: operationsMonth,
+      operationsVisits: operations.visits,
+      liveLocationsByUserId: _liveLocationsByUserId,
+      liveLocationsLoaded: _liveLocationsLoaded,
+    );
+    _latestData = data;
+    return data;
   }
 
-  Future<void> _refresh() async {
-    final future = _loadAttendance();
+  Future<void> _refresh({
+    bool force = false,
+    bool personalMonthOnly = false,
+  }) {
+    if (!mounted) return Future<void>.value();
+    if (!force && _reloadInFlight != null) {
+      return _reloadInFlight!;
+    }
+
+    final future = _loadAttendance(personalMonthOnly: personalMonthOnly);
     setState(() {
       _attendanceFuture = future;
+      _isRefreshing = true;
     });
-    await future;
+
+    Future<void> awaitReload() async {
+      var failed = false;
+      try {
+        await future;
+      } catch (_) {
+        failed = true;
+        rethrow;
+      } finally {
+        if (identical(_attendanceFuture, future)) {
+          _reloadInFlight = null;
+          if (mounted) {
+            setState(() {
+              _isRefreshing = false;
+              if (failed) _isRealtimeConnected = false;
+            });
+          }
+        }
+      }
+    }
+
+    final completion = awaitReload();
+    _reloadInFlight = completion;
+    return completion;
   }
 
   Future<void> _runAction(
@@ -67,10 +189,14 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     try {
       await action();
       await _refresh();
-    } catch (error) {
+    } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Attendance update failed: $error')),
+        const SnackBar(
+          content: Text(
+            'Unable to update attendance. Check GPS, permissions, and connection, then retry.',
+          ),
+        ),
       );
     } finally {
       if (mounted) {
@@ -84,8 +210,175 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   void _changeMonth(int offset) {
     setState(() {
       _visibleMonth = DateTime(_visibleMonth.year, _visibleMonth.month + offset);
-      _attendanceFuture = _loadAttendance();
     });
+    unawaited(_refresh(force: true, personalMonthOnly: true));
+  }
+
+  Future<void> _subscribeToRealtime() async {
+    final generation = ++_realtimeGeneration;
+    _realtimeDebounce?.cancel();
+    _liveLocationDebounce?.cancel();
+    final cancellations = <Future<void>>[
+      for (final subscription in _realtimeSubscriptions)
+        subscription.cancel(),
+      if (_liveLocationSubscription != null)
+        _liveLocationSubscription!.cancel(),
+    ];
+    _realtimeSubscriptions.clear();
+    _liveLocationSubscription = null;
+    _isRealtimeConnected = false;
+    _liveLocationsLoaded = false;
+    await Future.wait(cancellations);
+    if (!mounted || generation != _realtimeGeneration) return;
+
+    final isToday = DateUtils.isSameDay(
+      _selectedOperationsDate,
+      DateTime.now(),
+    );
+    if (!isToday) {
+      _liveLocationsByUserId = const {};
+    }
+
+    final streams = <Stream<void>>[
+      AttendanceController.watchOperationsAttendance(
+        _selectedOperationsDate,
+      ),
+      AttendanceController.watchOperationsVisits(_selectedOperationsDate),
+    ];
+    if (isToday) {
+      streams.add(AttendanceController.watchActiveVisits());
+      _liveLocationSubscription = AttendanceController
+          .watchOperationsLiveLocations()
+          .listen(
+        (locations) {
+          if (generation != _realtimeGeneration) return;
+          _handleLiveLocations(locations);
+        },
+        onError: (_) {
+          if (generation != _realtimeGeneration ||
+              !mounted ||
+              !_isRealtimeConnected) {
+            return;
+          }
+          setState(() {
+            _isRealtimeConnected = false;
+          });
+        },
+      );
+    }
+
+    for (final stream in streams) {
+      var isInitialSnapshot = true;
+      _realtimeSubscriptions.add(
+        stream.listen(
+          (_) {
+            if (generation != _realtimeGeneration || !mounted) return;
+            if (!_isRealtimeConnected) {
+              setState(() {
+                _isRealtimeConnected = true;
+              });
+            }
+            if (isInitialSnapshot) {
+              isInitialSnapshot = false;
+              return;
+            }
+            _scheduleRealtimeRefresh();
+          },
+          onError: (_) {
+            if (generation != _realtimeGeneration ||
+                !mounted ||
+                !_isRealtimeConnected) {
+              return;
+            }
+            setState(() {
+              _isRealtimeConnected = false;
+            });
+          },
+        ),
+      );
+    }
+  }
+
+  void _handleLiveLocations(List<LiveLocationModel> locations) {
+    if (!DateUtils.isSameDay(_selectedOperationsDate, DateTime.now())) return;
+    _liveLocationsLoaded = true;
+    _liveLocationsByUserId = Map<String, LiveLocationModel>.unmodifiable({
+      for (final location in locations)
+        if (location.userId.isNotEmpty) location.userId: location,
+    });
+    _liveLocationDebounce?.cancel();
+    _liveLocationDebounce = Timer(
+      const Duration(milliseconds: 500),
+      _publishLiveLocations,
+    );
+  }
+
+  void _publishLiveLocations() {
+    if (!mounted) return;
+    final inFlight = _reloadInFlight;
+    if (inFlight != null) {
+      unawaited(
+        inFlight.then<void>(
+          (_) => _publishLiveLocations(),
+          onError: (Object _, StackTrace _) => _publishLiveLocations(),
+        ),
+      );
+      return;
+    }
+
+    final current = _latestData;
+    if (current == null) return;
+    final updated = current.copyWith(
+      liveLocationsByUserId: _liveLocationsByUserId,
+      liveLocationsLoaded: _liveLocationsLoaded,
+    );
+    _latestData = updated;
+    setState(() {
+      _attendanceFuture = Future<_AttendanceViewData>.value(updated);
+    });
+  }
+
+  void _scheduleRealtimeRefresh() {
+    _realtimeDebounce?.cancel();
+    _realtimeDebounce = Timer(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      final inFlight = _reloadInFlight;
+      if (inFlight == null) {
+        unawaited(_refresh().catchError((Object _) {}));
+        return;
+      }
+      unawaited(
+        inFlight.then<void>(
+          (_) {
+            if (!mounted) return;
+            unawaited(_refresh().catchError((Object _) {}));
+          },
+          onError: (Object _, StackTrace _) {
+            if (!mounted) return;
+            unawaited(_refresh().catchError((Object _) {}));
+          },
+        ),
+      );
+    });
+  }
+
+  Future<void> _changeOperationsDate(DateTime date) async {
+    final normalized = DateTime(date.year, date.month, date.day);
+    if (DateUtils.isSameDay(normalized, _selectedOperationsDate)) return;
+
+    setState(() {
+      _selectedOperationsDate = normalized;
+      _latestData = null;
+    });
+    final subscriptionsReady = _subscribeToRealtime();
+    final refresh = _refresh(force: true);
+    await Future.wait([subscriptionsReady, refresh]);
+  }
+
+  void _openReports() {
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(builder: (_) => const ReportsScreen()),
+    );
   }
 
   @override
@@ -95,31 +388,41 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.background,
         elevation: 0,
-        title: Text('Attendance', style: AppTextStyles.headingSmall),
+        title: Text('Attendance Operations', style: AppTextStyles.headingSmall),
       ),
       body: FutureBuilder<_AttendanceViewData>(
         future: _attendanceFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          final availableData = _latestData ?? snapshot.data;
+          final hasSelectedDateData = availableData != null &&
+              DateUtils.isSameDay(
+                availableData.operationsDate,
+                _selectedOperationsDate,
+              );
+          if (snapshot.connectionState == ConnectionState.waiting &&
+              !hasSelectedDateData) {
             return const PremiumLoadingState(label: 'Loading attendance');
           }
 
-          if (snapshot.hasError) {
-            return PremiumErrorState(
-              title: 'Attendance failed to load.',
-              error: snapshot.error,
-              onRetry: _refresh,
+          if (snapshot.hasError && !hasSelectedDateData) {
+            return PremiumEmptyState(
+              icon: Icons.cloud_off_outlined,
+              title: 'Attendance is temporarily unavailable',
+              message:
+                  'Check the connection and Firestore access, then try again.',
+              actionLabel: 'Retry',
+              onAction: () {
+                unawaited(_refresh(force: true).catchError((Object _) {}));
+              },
             );
           }
 
-          final data = snapshot.data ??
-              const _AttendanceViewData(
-                today: null,
-                monthRecords: <AttendanceModel>[],
-              );
+          final data = hasSelectedDateData
+              ? availableData
+              : _AttendanceViewData.empty;
 
           return RefreshIndicator(
-            onRefresh: _refresh,
+            onRefresh: () => _refresh(force: true),
             color: AppColors.primary,
             backgroundColor: AppColors.surface,
             child: LayoutBuilder(
@@ -158,12 +461,40 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
                 return SingleChildScrollView(
                   physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
                   child: Center(
                     child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 1120),
-                      child: isWide
-                          ? Row(
+                      constraints: const BoxConstraints(maxWidth: 1320),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          AttendanceOperationsDashboard(
+                            selectedDate: _selectedOperationsDate,
+                            employees: data.employeeSummaries,
+                            attendanceRecords: data.operationsAttendance,
+                            previousAttendanceRecords: data.previousAttendance,
+                            monthAttendanceRecords:
+                                data.operationsMonthAttendance,
+                            visits: data.operationsVisits,
+                            liveLocationsByUserId:
+                                data.liveLocationsByUserId,
+                            liveLocationsLoaded: data.liveLocationsLoaded,
+                            realtimeConnected: _isRealtimeConnected,
+                            refreshing: _isRefreshing,
+                            onDateChanged: _changeOperationsDate,
+                            onRefresh: () => _refresh(force: true),
+                            onLoadHistory: AttendanceController
+                                .loadEmployeeAttendanceHistory,
+                            onOpenReports: _openReports,
+                          ),
+                          const SizedBox(height: 18),
+                          const PremiumSectionHeader(
+                            icon: Icons.badge_outlined,
+                            title: 'My Attendance',
+                          ),
+                          const SizedBox(height: 14),
+                          if (isWide)
+                            Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Expanded(flex: 5, child: summaryColumn),
@@ -171,13 +502,16 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                                 Expanded(flex: 6, child: historyColumn),
                               ],
                             )
-                          : Column(
+                          else
+                            Column(
                               children: [
                                 summaryColumn,
                                 const SizedBox(height: 16),
                                 historyColumn,
                               ],
                             ),
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -314,6 +648,7 @@ class _LocationAndSyncCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final currentAttendance = attendance;
     return PremiumCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -354,9 +689,9 @@ class _LocationAndSyncCard extends StatelessWidget {
           _ValidationRow(
             icon: Icons.cloud_done_outlined,
             label: 'Offline handling',
-            value: attendance == null
+            value: currentAttendance == null
                 ? 'No attendance record yet'
-                : 'Firestore offline cache active, ${attendance!.syncStatus}',
+                : 'Firestore offline cache active, ${currentAttendance.syncStatus}',
             color: AppColors.info,
           ),
         ],
@@ -699,7 +1034,7 @@ class _MetricTile extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             PremiumIconChip(icon: icon, color: color),
-            const Spacer(),
+            const SizedBox(height: 14),
             Text(
               value,
               maxLines: 1,
@@ -794,13 +1129,63 @@ class _AttendanceActionButton extends StatelessWidget {
 }
 
 class _AttendanceViewData {
+  final DateTime? operationsDate;
   final AttendanceModel? today;
   final List<AttendanceModel> monthRecords;
+  final List<ManagerEmployeeSummaryModel> employeeSummaries;
+  final List<AttendanceModel> operationsAttendance;
+  final List<AttendanceModel> previousAttendance;
+  final List<AttendanceModel> operationsMonthAttendance;
+  final List<CustomerVisitModel> operationsVisits;
+  final Map<String, LiveLocationModel> liveLocationsByUserId;
+  final bool liveLocationsLoaded;
 
   const _AttendanceViewData({
+    required this.operationsDate,
     required this.today,
     required this.monthRecords,
+    required this.employeeSummaries,
+    required this.operationsAttendance,
+    required this.previousAttendance,
+    required this.operationsMonthAttendance,
+    required this.operationsVisits,
+    required this.liveLocationsByUserId,
+    required this.liveLocationsLoaded,
   });
+
+  static const empty = _AttendanceViewData(
+    operationsDate: null,
+    today: null,
+    monthRecords: <AttendanceModel>[],
+    employeeSummaries: <ManagerEmployeeSummaryModel>[],
+    operationsAttendance: <AttendanceModel>[],
+    previousAttendance: <AttendanceModel>[],
+    operationsMonthAttendance: <AttendanceModel>[],
+    operationsVisits: <CustomerVisitModel>[],
+    liveLocationsByUserId: <String, LiveLocationModel>{},
+    liveLocationsLoaded: false,
+  );
+
+  _AttendanceViewData copyWith({
+    List<AttendanceModel>? monthRecords,
+    Map<String, LiveLocationModel>? liveLocationsByUserId,
+    bool? liveLocationsLoaded,
+  }) {
+    return _AttendanceViewData(
+      operationsDate: operationsDate,
+      today: today,
+      monthRecords: monthRecords ?? this.monthRecords,
+      employeeSummaries: employeeSummaries,
+      operationsAttendance: operationsAttendance,
+      previousAttendance: previousAttendance,
+      operationsMonthAttendance: operationsMonthAttendance,
+      operationsVisits: operationsVisits,
+      liveLocationsByUserId:
+          liveLocationsByUserId ?? this.liveLocationsByUserId,
+      liveLocationsLoaded:
+          liveLocationsLoaded ?? this.liveLocationsLoaded,
+    );
+  }
 }
 
 class _AttendanceStatus {
@@ -870,4 +1255,23 @@ String _formatMonth(DateTime month) {
 String _gpsLabel(double? latitude, double? longitude) {
   if (latitude == null || longitude == null) return 'Not captured';
   return '${latitude.toStringAsFixed(5)}, ${longitude.toStringAsFixed(5)}';
+}
+
+AttendanceModel? _latestRecordForUser(
+  List<AttendanceModel> records,
+  String? userId,
+) {
+  if (userId == null) return null;
+  AttendanceModel? latest;
+  for (final record in records) {
+    if (record.userId != userId) continue;
+    final recordTime = record.checkInTime ?? record.date;
+    final latestTime = latest?.checkInTime ?? latest?.date;
+    if (latest == null ||
+        (recordTime != null &&
+            (latestTime == null || recordTime.isAfter(latestTime)))) {
+      latest = record;
+    }
+  }
+  return latest;
 }

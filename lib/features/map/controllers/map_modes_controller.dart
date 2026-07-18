@@ -55,12 +55,10 @@ class MapModesController {
       operationalChangeStreams();
 
   /// Realtime change signals used by the Office View summary.
-  static List<Stream<void>> officeChangeStreams() =>
-      operationalChangeStreams();
+  static List<Stream<void>> officeChangeStreams() => operationalChangeStreams();
 
   /// Realtime change signals used by the Field Engineer dashboard.
-  static List<Stream<void>> fieldEngineerChangeStreams() =>
-      teamChangeStreams();
+  static List<Stream<void>> fieldEngineerChangeStreams() => teamChangeStreams();
 
   /// Loads Cab Tracking context for the current signed-in user.
   static Future<CabMapContext> loadCabContext() async {
@@ -81,20 +79,22 @@ class MapModesController {
     );
     final driverAssignment =
         await CabManagementController.loadTodayAssignmentForDriver(
-      driverId: uid,
-      dateKey: dateKey,
-    );
+          driverId: uid,
+          dateKey: dateKey,
+        );
 
     final managerAssignments =
         await CabManagementController.loadAssignmentsForDate(dateKey: dateKey);
-    final managerTrips =
-        await CabManagementController.loadTripsForDate(dateKey: dateKey);
-    final managerMembers =
-        await CabManagementController.loadAssignmentMembersForDate(
+    final managerTrips = await CabManagementController.loadTripsForDate(
       dateKey: dateKey,
     );
+    final managerMembers =
+        await CabManagementController.loadAssignmentMembersForDate(
+          dateKey: dateKey,
+        );
 
-    final assignment = driverAssignment ??
+    final assignment =
+        driverAssignment ??
         (member == null
             ? (managerAssignments.isEmpty ? null : managerAssignments.first)
             : await CabManagementController.loadAssignment(
@@ -199,12 +199,14 @@ class MapModesController {
         ? await CustomerVisitController.loadAllVisits()
         : await CustomerVisitController.loadMyVisits();
     final today = DateTime.now();
-    final visits = allVisits.where((visit) {
-      final date = visit.createdAt;
-      return date.year == today.year &&
-          date.month == today.month &&
-          date.day == today.day;
-    }).toList(growable: false);
+    final visits = allVisits
+        .where((visit) {
+          final date = visit.createdAt;
+          return date.year == today.year &&
+              date.month == today.month &&
+              date.day == today.day;
+        })
+        .toList(growable: false);
 
     return CustomerMapContext(visits: visits);
   }
@@ -275,10 +277,20 @@ class CabMapContext {
   bool get isEmployee => currentMember?.role == 'employee';
 
   /// True when current user can manage cab assignments.
-  bool get canManage => true;
+  bool get canManage {
+    final role = currentUser.role.trim().toLowerCase();
+    return const {
+      'manager',
+      'admin',
+      'administrator',
+      'application_owner',
+      'owner',
+      'ceo',
+    }.contains(role);
+  }
 
   /// True when current user can mutate cab operations.
-  bool get canMutateManagement => true;
+  bool get canMutateManagement => canManage;
 
   /// Employees currently ready for pickup.
   List<CabAssignmentMemberModel> get readyMembers => members
@@ -294,12 +306,16 @@ class CabMapContext {
 
   /// Employees marked boarded.
   List<CabAssignmentMemberModel> get boardedMembers => members
-      .where((member) => member.role == 'employee' && member.status == 'boarded')
+      .where(
+        (member) => member.role == 'employee' && member.status == 'boarded',
+      )
       .toList(growable: false);
 
   /// Employees marked no-show.
   List<CabAssignmentMemberModel> get noShowMembers => members
-      .where((member) => member.role == 'employee' && member.status == 'no_show')
+      .where(
+        (member) => member.role == 'employee' && member.status == 'no_show',
+      )
       .toList(growable: false);
 
   /// Ready employees across all assignments visible in Admin mode.
@@ -323,17 +339,14 @@ class TeamMapContext {
   });
 
   /// Active employees based on attendance-derived live status.
-  List<ManagerEmployeeSummaryModel> get activeSummaries => summaries.where(
-        (summary) {
-          final location = liveLocationsByUserId[summary.employee.uid];
-          return location != null &&
-              location.status == LocationTrackingPolicy.statusActive &&
-              !LocationTrackingPolicy.isStale(
-                location.updatedAt,
-                DateTime.now(),
-              );
-        },
-      ).toList(growable: false);
+  List<ManagerEmployeeSummaryModel> get activeSummaries => summaries
+      .where((summary) {
+        final location = liveLocationsByUserId[summary.employee.uid];
+        return location != null &&
+            location.status == LocationTrackingPolicy.statusActive &&
+            !LocationTrackingPolicy.isStale(location.updatedAt, DateTime.now());
+      })
+      .toList(growable: false);
 
   /// Employees currently checked in and not on break.
   int get onDutyCount =>
@@ -347,10 +360,8 @@ class TeamMapContext {
   int get offlineCount => summaries.length - onDutyCount - onBreakCount;
 
   /// Active customer visits across the team.
-  int get currentVisitCount => summaries.fold<int>(
-        0,
-        (total, summary) => total + summary.activeVisits,
-      );
+  int get currentVisitCount =>
+      summaries.fold<int>(0, (total, summary) => total + summary.activeVisits);
 }
 
 /// Customer Location data projected for the Map screen.

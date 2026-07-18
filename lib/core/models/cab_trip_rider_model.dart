@@ -25,6 +25,11 @@ class CabTripRiderModel {
 
   /// Time when the employee boarded the cab.
   final DateTime? boardedAt;
+  final DateTime? reachedPickupAt;
+  final DateTime? droppedAt;
+  final int waitingDurationSeconds;
+  final int pickupOrder;
+  final int pickupDelaySeconds;
 
   /// Pickup latitude captured when the employee becomes ready.
   final double? pickupLatitude;
@@ -48,6 +53,11 @@ class CabTripRiderModel {
     this.readyAt,
     this.pickedUpAt,
     this.boardedAt,
+    this.reachedPickupAt,
+    this.droppedAt,
+    this.waitingDurationSeconds = 0,
+    this.pickupOrder = 0,
+    this.pickupDelaySeconds = 0,
     this.pickupLatitude,
     this.pickupLongitude,
     this.createdAt,
@@ -68,6 +78,11 @@ class CabTripRiderModel {
       readyAt: _parseDateTime(map['readyAt']),
       pickedUpAt: _parseDateTime(map['pickedUpAt']),
       boardedAt: _parseDateTime(map['boardedAt']),
+      reachedPickupAt: _parseDateTime(map['reachedPickupAt']),
+      droppedAt: _parseDateTime(map['droppedAt']),
+      waitingDurationSeconds: _parseInt(map['waitingDurationSeconds']),
+      pickupOrder: _parseInt(map['pickupOrder']),
+      pickupDelaySeconds: _parseInt(map['pickupDelaySeconds']),
       pickupLatitude: _parseNullableDouble(map['pickupLatitude']),
       pickupLongitude: _parseNullableDouble(map['pickupLongitude']),
       createdAt: _parseDateTime(map['createdAt']),
@@ -85,6 +100,13 @@ class CabTripRiderModel {
       'readyAt': readyAt == null ? null : Timestamp.fromDate(readyAt!),
       'pickedUpAt': pickedUpAt == null ? null : Timestamp.fromDate(pickedUpAt!),
       'boardedAt': boardedAt == null ? null : Timestamp.fromDate(boardedAt!),
+      'reachedPickupAt': reachedPickupAt == null
+          ? null
+          : Timestamp.fromDate(reachedPickupAt!),
+      'droppedAt': droppedAt == null ? null : Timestamp.fromDate(droppedAt!),
+      'waitingDurationSeconds': waitingDurationSeconds,
+      'pickupOrder': pickupOrder,
+      'pickupDelaySeconds': pickupDelaySeconds,
       'pickupLatitude': pickupLatitude,
       'pickupLongitude': pickupLongitude,
       'createdAt': createdAt == null ? null : Timestamp.fromDate(createdAt!),
@@ -102,6 +124,11 @@ class CabTripRiderModel {
     DateTime? readyAt,
     DateTime? pickedUpAt,
     DateTime? boardedAt,
+    DateTime? reachedPickupAt,
+    DateTime? droppedAt,
+    int? waitingDurationSeconds,
+    int? pickupOrder,
+    int? pickupDelaySeconds,
     double? pickupLatitude,
     double? pickupLongitude,
     DateTime? createdAt,
@@ -116,6 +143,12 @@ class CabTripRiderModel {
       readyAt: readyAt ?? this.readyAt,
       pickedUpAt: pickedUpAt ?? this.pickedUpAt,
       boardedAt: boardedAt ?? this.boardedAt,
+      reachedPickupAt: reachedPickupAt ?? this.reachedPickupAt,
+      droppedAt: droppedAt ?? this.droppedAt,
+      waitingDurationSeconds:
+          waitingDurationSeconds ?? this.waitingDurationSeconds,
+      pickupOrder: pickupOrder ?? this.pickupOrder,
+      pickupDelaySeconds: pickupDelaySeconds ?? this.pickupDelaySeconds,
       pickupLatitude: pickupLatitude ?? this.pickupLatitude,
       pickupLongitude: pickupLongitude ?? this.pickupLongitude,
       createdAt: createdAt ?? this.createdAt,
@@ -138,5 +171,10 @@ class CabTripRiderModel {
     if (value is int) return value.toDouble();
     if (value is String) return double.tryParse(value);
     return null;
+  }
+
+  static int _parseInt(Object? value) {
+    if (value is num) return value.round();
+    return int.tryParse('$value') ?? 0;
   }
 }

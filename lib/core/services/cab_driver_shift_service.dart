@@ -27,7 +27,9 @@ class CabDriverShiftService {
 
   static Future<void> updateShift(CabDriverShiftModel shift) async {
     if (shift.id.isEmpty) {
-      throw StateError('CabDriverShiftService.updateShift requires a shift id.');
+      throw StateError(
+        'CabDriverShiftService.updateShift requires a shift id.',
+      );
     }
 
     try {
@@ -81,9 +83,41 @@ class CabDriverShiftService {
     }
   }
 
+  static Future<CabDriverShiftModel?> fetchTodayShiftForDriver({
+    required String driverId,
+    required String dateKey,
+  }) async {
+    final snapshot = await _collection
+        .where('driverId', isEqualTo: driverId)
+        .get();
+    final shifts = snapshot.docs
+        .map((doc) => CabDriverShiftModel.fromMap(doc.data(), id: doc.id))
+        .where((shift) => shift.shiftDate == dateKey)
+        .toList();
+    if (shifts.isEmpty) return null;
+    shifts.sort(
+      (a, b) => (b.shiftStart ?? DateTime(1970)).compareTo(
+        a.shiftStart ?? DateTime(1970),
+      ),
+    );
+    return shifts.first;
+  }
+
+  static Stream<void> watchShiftsForDriver(String driverId) {
+    return _collection
+        .where('driverId', isEqualTo: driverId)
+        .snapshots()
+        .map<void>((_) {});
+  }
+
+  static Stream<void> watchAllShifts() =>
+      _collection.snapshots().map<void>((_) {});
+
   static Future<List<CabDriverShiftModel>> fetchAllShifts() async {
     try {
-      final snapshot = await _collection.orderBy('shiftDate', descending: false).get();
+      final snapshot = await _collection
+          .orderBy('shiftDate', descending: false)
+          .get();
       return snapshot.docs
           .map((doc) => CabDriverShiftModel.fromMap(doc.data(), id: doc.id))
           .toList();

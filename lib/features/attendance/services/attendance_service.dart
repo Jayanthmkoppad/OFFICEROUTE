@@ -74,6 +74,58 @@ class AttendanceService {
     }
   }
 
+  /// Loads all attendance records for one calendar day.
+  static Future<List<AttendanceModel>> fetchAttendanceForDate(
+    DateTime day,
+  ) async {
+    try {
+      final date = Timestamp.fromDate(DateTime(day.year, day.month, day.day));
+      final snapshot = await _collection.where('date', isEqualTo: date).get();
+      return snapshot.docs
+          .map((doc) => AttendanceModel.fromMap(doc.data(), id: doc.id))
+          .toList(growable: false);
+    } catch (error, stackTrace) {
+      _printAttendanceException(
+        error: error,
+        stackTrace: stackTrace,
+        method: 'AttendanceService.fetchAttendanceForDate',
+      );
+      rethrow;
+    }
+  }
+
+  /// Loads attendance records in the half-open range [start, end).
+  static Future<List<AttendanceModel>> fetchAttendanceForRange({
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    try {
+      final snapshot = await _collection
+          .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+          .where('date', isLessThan: Timestamp.fromDate(end))
+          .get();
+      return snapshot.docs
+          .map((doc) => AttendanceModel.fromMap(doc.data(), id: doc.id))
+          .toList(growable: false);
+    } catch (error, stackTrace) {
+      _printAttendanceException(
+        error: error,
+        stackTrace: stackTrace,
+        method: 'AttendanceService.fetchAttendanceForRange',
+      );
+      rethrow;
+    }
+  }
+
+  /// Emits when attendance for one calendar day changes.
+  static Stream<void> watchAttendanceForDate(DateTime day) {
+    final date = Timestamp.fromDate(DateTime(day.year, day.month, day.day));
+    return _collection
+        .where('date', isEqualTo: date)
+        .snapshots()
+        .map<void>((_) {});
+  }
+
   /// Emits whenever an attendance document visible to the user changes.
   static Stream<void> watchAttendanceChanges() {
     return _collection.snapshots().map<void>((_) {});

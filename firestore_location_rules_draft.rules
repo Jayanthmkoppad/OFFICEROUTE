@@ -6,6 +6,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function isBootstrapAdministrator() {
+      return signedIn() &&
+        request.auth.token.email == 'jayanthmkoppad2@gmail.com';
+    }
+
     function userProfile() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid));
     }
@@ -16,13 +21,113 @@ service cloud.firestore {
     }
 
     function isManagerOrAdmin() {
-      return hasRole('manager') ||
+      return isBootstrapAdministrator() ||
+        hasRole('manager') ||
         hasRole('admin') ||
+        hasRole('administrator') ||
+        hasRole('application_owner') ||
+        hasRole('owner') ||
         hasRole('ceo');
+    }
+
+    function isAdministrator() {
+      return isBootstrapAdministrator() ||
+        hasRole('admin') ||
+        hasRole('administrator') ||
+        hasRole('application_owner') ||
+        hasRole('owner');
+    }
+
+    function isCabDriver() {
+      return hasRole('driver') || hasRole('cab_driver');
     }
 
     function isSelf(userId) {
       return signedIn() && request.auth.uid == userId;
+    }
+
+    function validSelfSessionRequest() {
+      return request.resource.data.sessionApproved == false &&
+        request.resource.data.approvalStatus == 'Pending' &&
+        request.resource.data.role in ['employee', 'driver', 'manager'];
+    }
+
+    function validSelfProfileUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'name', 'phone', 'profileImage', 'department', 'designation',
+        'branch', 'reportingManager', 'joiningDate', 'employeeCode',
+        'emergencyContact', 'bloodGroup', 'skills', 'certifications',
+        'themeMode', 'language', 'locationAccuracy', 'biometricEnabled',
+        'lastLogin', 'lastSeen', 'isFirstLogin', 'licenseNumber'
+      ]);
+    }
+
+    function validSelfDeviceRequest(userId) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'pendingDeviceId', 'pendingDeviceModel', 'pendingDevicePlatform',
+          'pendingDeviceAppVersion', 'deviceRequestAt',
+          'deviceApprovalStatus', 'lastSeen'
+        ]) &&
+        request.resource.data.pendingDeviceId is string &&
+        request.resource.data.pendingDeviceId.size() > 0 &&
+        request.resource.data.deviceApprovalStatus == 'Pending';
+    }
+
+    match /users/{userId} {
+      allow read: if isSelf(userId) || isAdministrator() || isCabDriver() ||
+        (signedIn() && resource.data.email == 'jayanthmkoppad2@gmail.com');
+      allow create: if isBootstrapAdministrator() ||
+        (isSelf(userId) && validSelfSessionRequest());
+      allow update: if isAdministrator() ||
+        (
+          isSelf(userId) &&
+          (
+            validSelfProfileUpdate() ||
+            validSelfDeviceRequest(userId) ||
+            (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'name', 'displayName', 'email', 'phone', 'employeeId', 'employeeCode',
+                'branch', 'department', 'designation', 'serviceCentre',
+                'vehicleNumber', 'reportingRegion', 'remarks', 'role',
+                'sessionRole', 'deviceId', 'deviceModel', 'platform',
+                'appVersion', 'loginProvider', 'sessionApproved',
+                'approvalStatus', 'requestedAt', 'approvedAt', 'approvedBy',
+                'rejectionReason', 'administratorRemarks', 'lastLogin',
+                'lastSeen', 'isFirstLogin', 'status', 'approvalHistory'
+              ]) &&
+              validSelfSessionRequest() &&
+              request.resource.data.email == request.auth.token.email
+            )
+          )
+        );
+      allow delete: if false;
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow create: if signedIn() &&
+        (
+          request.resource.data.userId == request.auth.uid ||
+          isAdministrator() ||
+          (
+            isCabDriver() &&
+              request.resource.data.type in [
+              'cab_arriving', 'cab_reached', 'cab_picked_up', 'cab_dropped',
+              'cab_next_employee', 'cab_trip_started', 'cab_trip_completed',
+              'cab_waiting_alert', 'cab_delay_alert'
+            ]
+          ) ||
+          (
+            request.resource.data.type in [
+              'session_access_request', 'session_device_request'
+            ] &&
+            request.resource.data.userId != request.auth.uid &&
+            get(/databases/$(database)/documents/users/$(request.resource.data.userId)).data.email ==
+              'jayanthmkoppad2@gmail.com'
+          )
+        );
+      allow update: if signedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
     }
 
     function validLocationPayload(userId) {
@@ -44,7 +149,7 @@ service cloud.firestore {
     }
 
     match /live_locations/{userId} {
-      allow read: if isSelf(userId) || isManagerOrAdmin();
+      allow read: if isSelf(userId) || isManagerOrAdmin() || isCabDriver();
       allow create, update: if isSelf(userId) &&
         (
           validLocationPayload(userId) ||
@@ -81,6 +186,91 @@ service cloud.firestore {
       allow read: if isSelf(resource.data.userId) || isManagerOrAdmin();
       allow create: if isSelf(request.resource.data.userId);
       allow update, delete: if false;
+    }
+
+    match /notification_preferences/{userId} {
+      allow read, create, update: if isSelf(userId);
+      allow delete: if false;
+    }
+
+    match /cab_assignments/{assignmentId} {
+      allow read: if isManagerOrAdmin() ||
+        (signedIn() && resource.data.driverId == request.auth.uid) ||
+        (signedIn() && request.auth.uid in resource.data.employeeIds);
+      allow create, delete: if isManagerOrAdmin();
+      allow update: if isManagerOrAdmin() ||
+        (
+          isCabDriver() && resource.data.driverId == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'updatedAt'
+          ])
+        );
+    }
+
+    match /cab_assignment_members/{memberId} {
+      allow read: if isManagerOrAdmin() ||
+        (signedIn() && resource.data.userId == request.auth.uid) ||
+        (signedIn() && resource.data.driverId == request.auth.uid);
+      allow create, delete: if isManagerOrAdmin();
+      allow update: if isManagerOrAdmin() ||
+        (
+          isCabDriver() && resource.data.driverId == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'updatedAt'
+          ])
+        );
+    }
+
+    match /cab_vehicles/{vehicleId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isManagerOrAdmin();
+    }
+
+    match /cab_driver_shifts/{shiftId} {
+      allow read: if isManagerOrAdmin() ||
+        (signedIn() && resource.data.driverId == request.auth.uid);
+      allow create: if isManagerOrAdmin() ||
+        (isCabDriver() && request.resource.data.driverId == request.auth.uid);
+      allow update: if isManagerOrAdmin() ||
+        (
+          isCabDriver() && resource.data.driverId == request.auth.uid &&
+          request.resource.data.driverId == resource.data.driverId &&
+          request.resource.data.vehicleId == resource.data.vehicleId
+        );
+      allow delete: if isManagerOrAdmin();
+    }
+
+    match /cab_trips/{tripId} {
+      allow read: if signedIn();
+      allow create: if isManagerOrAdmin() ||
+        (isCabDriver() && request.resource.data.driverId == request.auth.uid);
+      allow update: if isManagerOrAdmin() ||
+        (
+          isCabDriver() && resource.data.driverId == request.auth.uid &&
+          request.resource.data.driverId == resource.data.driverId &&
+          request.resource.data.assignmentId == resource.data.assignmentId
+        );
+      allow delete: if isManagerOrAdmin();
+
+      match /riders/{riderId} {
+        allow read: if signedIn();
+        allow create, update: if isManagerOrAdmin() ||
+          (
+            isCabDriver() &&
+            get(/databases/$(database)/documents/cab_trips/$(tripId)).data.driverId == request.auth.uid
+          );
+        allow delete: if isManagerOrAdmin();
+      }
+
+      match /events/{eventId} {
+        allow read: if signedIn();
+        allow create: if isManagerOrAdmin() ||
+          (
+            isCabDriver() &&
+            get(/databases/$(database)/documents/cab_trips/$(tripId)).data.driverId == request.auth.uid
+          );
+        allow update, delete: if false;
+      }
     }
   }
 }

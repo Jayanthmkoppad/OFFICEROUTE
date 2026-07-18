@@ -17,14 +17,16 @@ class PremiumCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
     final card = DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xE6121212),
+        color: theme.cardColor,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white.withAlpha(24)),
-        boxShadow: const [
+        border: Border.all(color: colors.outlineVariant),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x42000000),
+            color: colors.shadow.withAlpha(66),
             blurRadius: 24,
             offset: Offset(0, 14),
           ),
@@ -74,6 +76,7 @@ class PremiumSectionHeader extends StatelessWidget {
             style: AppTextStyles.headingSmall.copyWith(
               fontSize: 18,
               letterSpacing: 0,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
         ),
@@ -81,7 +84,7 @@ class PremiumSectionHeader extends StatelessWidget {
           TextButton(
             onPressed: onAction,
             style: TextButton.styleFrom(
-              foregroundColor: AppColors.textPrimary,
+              foregroundColor: Theme.of(context).colorScheme.onSurface,
               visualDensity: VisualDensity.compact,
             ),
             child: Text(actionLabel!),
@@ -93,25 +96,26 @@ class PremiumSectionHeader extends StatelessWidget {
 
 class PremiumIconChip extends StatelessWidget {
   final IconData icon;
-  final Color color;
+  final Color? color;
 
   const PremiumIconChip({
     super.key,
     required this.icon,
-    this.color = AppColors.textPrimary,
+    this.color,
   });
 
   @override
   Widget build(BuildContext context) {
+    final effectiveColor = color ?? Theme.of(context).colorScheme.onSurface;
     return Container(
       width: 40,
       height: 40,
       decoration: BoxDecoration(
-        color: color.withAlpha(22),
+        color: effectiveColor.withAlpha(22),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withAlpha(56)),
+        border: Border.all(color: effectiveColor.withAlpha(56)),
       ),
-      child: Icon(icon, color: color, size: 20),
+      child: Icon(icon, color: effectiveColor, size: 20),
     );
   }
 }
@@ -153,7 +157,7 @@ class PremiumStatusChip extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: AppTextStyles.caption.copyWith(
-                color: AppColors.textPrimary,
+                color: Theme.of(context).colorScheme.onSurface,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 0,
               ),
@@ -215,7 +219,10 @@ class PremiumEmptyState extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              PremiumIconChip(icon: icon, color: AppColors.textSecondary),
+              PremiumIconChip(
+                icon: icon,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
               const SizedBox(height: 18),
               Text(
                 title,
@@ -342,6 +349,7 @@ class PremiumTextField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return TextField(
       controller: controller,
       maxLines: maxLines,
@@ -350,18 +358,18 @@ class PremiumTextField extends StatelessWidget {
         labelText: label,
         prefixIcon: Icon(icon),
         filled: true,
-        fillColor: Colors.white.withAlpha(10),
+        fillColor: colors.surfaceContainerHighest,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(color: Colors.white.withAlpha(24)),
+          borderSide: BorderSide(color: colors.outlineVariant),
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: BorderSide(color: Colors.white.withAlpha(24)),
+          borderSide: BorderSide(color: colors.outlineVariant),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(18),
-          borderSide: const BorderSide(color: AppColors.textPrimary),
+          borderSide: BorderSide(color: colors.primary),
         ),
       ),
     );

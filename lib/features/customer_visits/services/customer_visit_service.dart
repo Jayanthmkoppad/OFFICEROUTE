@@ -54,6 +54,86 @@ class CustomerVisitService {
     }
   }
 
+  /// Loads visits with lifecycle activity on one operational day.
+  static Future<List<CustomerVisitModel>> fetchOperationalVisitsForDate(
+    DateTime day,
+  ) async {
+    try {
+      final start = DateTime(day.year, day.month, day.day);
+      final end = start.add(const Duration(days: 1));
+      final createdFuture = _collection
+          .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+          .where('createdAt', isLessThan: Timestamp.fromDate(end))
+          .get();
+      final startedFuture = _collection
+          .where('checkInTime', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+          .where('checkInTime', isLessThan: Timestamp.fromDate(end))
+          .get();
+      final checkedOutFuture = _collection
+          .where('checkOutTime', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+          .where('checkOutTime', isLessThan: Timestamp.fromDate(end))
+          .get();
+      final completedFuture = _collection
+          .where('completedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+          .where('completedAt', isLessThan: Timestamp.fromDate(end))
+          .get();
+      final snapshotFutures = <Future<QuerySnapshot<Map<String, dynamic>>>>[
+        createdFuture,
+        startedFuture,
+        checkedOutFuture,
+        completedFuture,
+      ];
+      final now = DateTime.now();
+      final isToday = day.year == now.year &&
+          day.month == now.month &&
+          day.day == now.day;
+      if (isToday) {
+        snapshotFutures.add(
+          _collection.where('status', isEqualTo: 'checked_in').get(),
+        );
+      }
+      final snapshots = await Future.wait(snapshotFutures);
+      final visitsById = <String, CustomerVisitModel>{};
+      for (final snapshot in snapshots) {
+        for (final doc in snapshot.docs) {
+          visitsById[doc.id] = CustomerVisitModel.fromMap(
+            doc.data(),
+            id: doc.id,
+          );
+        }
+      }
+      final visits = visitsById.values.toList()
+        ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      return visits;
+    } catch (error, stackTrace) {
+      _printCustomerVisitException(
+        error: error,
+        stackTrace: stackTrace,
+        method: 'CustomerVisitService.fetchOperationalVisitsForDate',
+      );
+      rethrow;
+    }
+  }
+
+  /// Emits when visits updated on one operational day change.
+  static Stream<void> watchVisitsForDate(DateTime day) {
+    final start = DateTime(day.year, day.month, day.day);
+    final end = start.add(const Duration(days: 1));
+    return _collection
+        .where('updatedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+        .where('updatedAt', isLessThan: Timestamp.fromDate(end))
+        .snapshots()
+        .map<void>((_) {});
+  }
+
+  /// Emits when the active visit set changes.
+  static Stream<void> watchActiveVisitChanges() {
+    return _collection
+        .where('status', isEqualTo: 'checked_in')
+        .snapshots()
+        .map<void>((_) {});
+  }
+
   /// Emits whenever a customer visit visible to the user changes.
   static Stream<void> watchVisitChanges() {
     return _collection.snapshots().map<void>((_) {});
@@ -109,6 +189,22 @@ class CustomerVisitService {
     required String issueDescription,
     required List<String> partsUsed,
     required String technicianNotes,
+    String dealerName = '',
+    String complaintId = '',
+    String dealerPinCode = '',
+    double? dealerLatitude,
+    double? dealerLongitude,
+    String priority = '',
+    DateTime? preferredVisitDate,
+    int? expectedDurationMinutes,
+    String serviceCentreName = '',
+    double? serviceCentreDistanceKm,
+    double? roadDistanceKm,
+    int? estimatedTravelMinutes,
+    double? travelCostEstimate,
+    DateTime? assignedAt,
+    String vehicleNumber = '',
+    String batterySerialNumber = '',
   }) async {
     try {
       final now = DateTime.now();
@@ -141,6 +237,22 @@ class CustomerVisitService {
         checkInLongitude: null,
         checkOutLatitude: null,
         checkOutLongitude: null,
+        dealerName: dealerName,
+        complaintId: complaintId,
+        dealerPinCode: dealerPinCode,
+        dealerLatitude: dealerLatitude,
+        dealerLongitude: dealerLongitude,
+        priority: priority,
+        preferredVisitDate: preferredVisitDate,
+        expectedDurationMinutes: expectedDurationMinutes,
+        serviceCentreName: serviceCentreName,
+        serviceCentreDistanceKm: serviceCentreDistanceKm,
+        roadDistanceKm: roadDistanceKm,
+        estimatedTravelMinutes: estimatedTravelMinutes,
+        travelCostEstimate: travelCostEstimate,
+        assignedAt: assignedAt == null ? null : now,
+        vehicleNumber: vehicleNumber,
+        batterySerialNumber: batterySerialNumber,
       );
 
       final docRef = await _collection.add(visit.toMap());
@@ -174,6 +286,21 @@ class CustomerVisitService {
       );
       rethrow;
     }
+  }
+
+  /// Assigns or reassigns a planned visit and records the assignment time.
+  static Future<CustomerVisitModel> assignEngineer({
+    required CustomerVisitModel visit,
+    required String engineerId,
+  }) async {
+    final now = DateTime.now();
+    return updateVisit(
+      visit.copyWith(
+        userId: engineerId,
+        assignedAt: visit.assignedAt ?? now,
+        updatedAt: now,
+      ),
+    );
   }
 
   static Future<CustomerVisitModel> checkIn({
@@ -256,6 +383,7 @@ class CustomerVisitService {
     required List<String> partsUsed,
     required String signatureStatus,
     required String videoStatus,
+    String? resolutionStatus,
   }) async {
     try {
       final now = DateTime.now();
@@ -265,6 +393,7 @@ class CustomerVisitService {
         partsUsed: partsUsed,
         signaturePlaceholderStatus: signatureStatus,
         videoPlaceholderStatus: videoStatus,
+        resolutionStatus: resolutionStatus ?? visit.resolutionStatus,
         completedAt: now,
         updatedAt: now,
       );

@@ -40,6 +40,16 @@ class NotificationController {
     return NotificationService.markAllAsRead(uid);
   }
 
+  static Stream<void> watchMyNotifications() {
+    final uid = _requiredUserId();
+    return NotificationService.watchNotificationsForUser(uid);
+  }
+
+  static Future<void> deleteNotification(AppNotificationModel notification) {
+    _requiredUserId();
+    return NotificationService.deleteNotification(notification.id);
+  }
+
   static Future<NotificationPreferencesModel> updatePreferences(
     NotificationPreferencesModel preferences,
   ) {

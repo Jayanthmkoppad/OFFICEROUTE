@@ -37,6 +37,19 @@ class NotificationService {
     }
   }
 
+  /// Emits whenever notifications for one user change.
+  static Stream<void> watchNotificationsForUser(String userId) {
+    return _notifications
+        .where('userId', isEqualTo: userId)
+        .snapshots()
+        .map<void>((_) {});
+  }
+
+  /// Emits whenever one user's existing preference document changes.
+  static Stream<void> watchPreferences(String userId) {
+    return _preferences.doc(userId).snapshots().map<void>((_) {});
+  }
+
   static Future<AppNotificationModel> createLocalNotification({
     required String userId,
     required String title,
@@ -76,10 +89,10 @@ class NotificationService {
 
   static Future<void> markAsRead(AppNotificationModel notification) async {
     try {
-      await _notifications.doc(notification.id).update(
-            notification
-                .copyWith(isRead: true, readAt: DateTime.now())
-                .toMap(),
+      await _notifications
+          .doc(notification.id)
+          .update(
+            notification.copyWith(isRead: true, readAt: DateTime.now()).toMap(),
           );
     } catch (error, stackTrace) {
       _printNotificationException(
@@ -100,9 +113,7 @@ class NotificationService {
       for (final notification in unread) {
         batch.update(
           _notifications.doc(notification.id),
-          notification
-              .copyWith(isRead: true, readAt: DateTime.now())
-              .toMap(),
+          notification.copyWith(isRead: true, readAt: DateTime.now()).toMap(),
         );
       }
 
@@ -112,6 +123,19 @@ class NotificationService {
         error: error,
         stackTrace: stackTrace,
         method: 'NotificationService.markAllAsRead',
+      );
+      rethrow;
+    }
+  }
+
+  static Future<void> deleteNotification(String notificationId) async {
+    try {
+      await _notifications.doc(notificationId).delete();
+    } catch (error, stackTrace) {
+      _printNotificationException(
+        error: error,
+        stackTrace: stackTrace,
+        method: 'NotificationService.deleteNotification',
       );
       rethrow;
     }

@@ -124,6 +124,24 @@ class LiveLocationService {
     return _collection.snapshots().map<void>((_) {});
   }
 
+  /// Streams active or intentionally paused locations for operations views.
+  ///
+  /// This is a read-only projection of the existing `live_locations`
+  /// collection. It does not start tracking or write location data.
+  static Stream<List<LiveLocationModel>> watchLiveLocations() {
+    return _collection
+        .where('status', whereIn: const [
+          LocationTrackingPolicy.statusActive,
+          LocationTrackingPolicy.statusPaused,
+        ])
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => LiveLocationModel.fromMap(doc.data()))
+              .toList(growable: false),
+        );
+  }
+
   /// Emits whenever one user's live-location document changes.
   static Stream<void> watchLiveLocation(String userId) {
     return _collection.doc(userId).snapshots().map<void>((_) {});

@@ -24,12 +24,19 @@ class CustomerVisitController {
     return visits.where((visit) {
       final values = [
         visit.customerName,
+        visit.dealerName,
         visit.customerAddress,
         visit.customerPhone,
+        visit.dealerPinCode,
+        visit.complaintId,
+        visit.priority,
+        visit.serviceCentreName,
         visit.purpose,
         visit.vehicleDetails,
+        visit.vehicleNumber,
         visit.motorSerialNumber,
         visit.controllerSerialNumber,
+        visit.batterySerialNumber,
         visit.issueCategory,
         visit.issueDescription,
         visit.status,
@@ -63,10 +70,27 @@ class CustomerVisitController {
     required String issueDescription,
     required List<String> partsUsed,
     required String technicianNotes,
+    String? assignedUserId,
+    String dealerName = '',
+    String complaintId = '',
+    String dealerPinCode = '',
+    double? dealerLatitude,
+    double? dealerLongitude,
+    String priority = '',
+    DateTime? preferredVisitDate,
+    int? expectedDurationMinutes,
+    String serviceCentreName = '',
+    double? serviceCentreDistanceKm,
+    double? roadDistanceKm,
+    int? estimatedTravelMinutes,
+    double? travelCostEstimate,
+    String vehicleNumber = '',
+    String batterySerialNumber = '',
   }) async {
     final uid = _requiredUserId();
+    final engineerId = assignedUserId ?? uid;
     return CustomerVisitService.createVisit(
-      userId: uid,
+      userId: engineerId,
       customerName: customerName,
       customerAddress: customerAddress,
       customerPhone: customerPhone,
@@ -80,12 +104,67 @@ class CustomerVisitController {
       issueDescription: issueDescription,
       partsUsed: partsUsed,
       technicianNotes: technicianNotes,
+      dealerName: dealerName,
+      complaintId: complaintId,
+      dealerPinCode: dealerPinCode,
+      dealerLatitude: dealerLatitude,
+      dealerLongitude: dealerLongitude,
+      priority: priority,
+      preferredVisitDate: preferredVisitDate,
+      expectedDurationMinutes: expectedDurationMinutes,
+      serviceCentreName: serviceCentreName,
+      serviceCentreDistanceKm: serviceCentreDistanceKm,
+      roadDistanceKm: roadDistanceKm,
+      estimatedTravelMinutes: estimatedTravelMinutes,
+      travelCostEstimate: travelCostEstimate,
+      assignedAt: assignedUserId != null && engineerId.isNotEmpty
+          ? DateTime.now()
+          : null,
+      vehicleNumber: vehicleNumber,
+      batterySerialNumber: batterySerialNumber,
     );
   }
 
   static Future<CustomerVisitModel> updateVisit(CustomerVisitModel visit) {
     _requiredUserId();
     return CustomerVisitService.updateVisit(visit);
+  }
+
+  /// Assigns or reassigns an engineer while preserving the visit package.
+  static Future<CustomerVisitModel> assignEngineer({
+    required CustomerVisitModel visit,
+    required String engineerId,
+  }) {
+    _requiredUserId();
+    return CustomerVisitService.assignEngineer(
+      visit: visit,
+      engineerId: engineerId,
+    );
+  }
+
+  /// Records a technical service timeline event with the current GPS point.
+  static Future<CustomerVisitModel> addTechnicalTimelineEvent({
+    required CustomerVisitModel visit,
+    required String eventType,
+    String notes = '',
+  }) async {
+    _requiredUserId();
+    final location = await LocationController.getCurrentLocation();
+    final event = VisitTimelineEvent(
+      eventType: eventType,
+      occurredAt: DateTime.now(),
+      latitude: location.latitude,
+      longitude: location.longitude,
+      notes: notes,
+    );
+    return CustomerVisitService.updateVisit(
+      visit.copyWith(
+        technicalTimeline: <VisitTimelineEvent>[
+          ...visit.technicalTimeline,
+          event,
+        ],
+      ),
+    );
   }
 
   static Future<CustomerVisitModel> checkIn(CustomerVisitModel visit) async {
@@ -125,6 +204,7 @@ class CustomerVisitController {
     required List<String> partsUsed,
     required String signatureStatus,
     required String videoStatus,
+    String? resolutionStatus,
   }) {
     _requiredUserId();
     return CustomerVisitService.completeVisit(
@@ -133,6 +213,7 @@ class CustomerVisitController {
       partsUsed: partsUsed,
       signatureStatus: signatureStatus,
       videoStatus: videoStatus,
+      resolutionStatus: resolutionStatus,
     );
   }
 
