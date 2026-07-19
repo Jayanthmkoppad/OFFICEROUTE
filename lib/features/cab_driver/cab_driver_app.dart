@@ -6,6 +6,7 @@ import '../../core/models/cab_assignment_model.dart';
 import '../../core/models/cab_trip_event_model.dart';
 import '../../core/models/cab_trip_model.dart';
 import '../../core/models/cab_trip_rider_model.dart';
+import '../../core/models/cab_vehicle_model.dart';
 import '../../core/models/live_location_model.dart';
 import '../../core/models/user_model.dart';
 import '../../core/controllers/cab_management_controller.dart';
@@ -21,6 +22,8 @@ import '../auth/services/auth_service.dart';
 import '../map/map_screen.dart';
 import '../notifications/notification_center_screen.dart';
 import 'controllers/cab_driver_controller.dart';
+import 'cab_driver_workflow_support.dart';
+import 'widgets/driver_start_duty_overlay.dart';
 
 class CabDriverApp extends StatefulWidget {
   const CabDriverApp({super.key});
@@ -36,6 +39,8 @@ class _CabDriverAppState extends State<CabDriverApp> {
   Timer? _clock;
   int _index = 0;
   bool _busy = false;
+  int _startDutyStep = -1;
+  String? _startDutyError;
 
   @override
   void initState() {
@@ -90,6 +95,50 @@ class _CabDriverAppState extends State<CabDriverApp> {
     }
   }
 
+  /// Drives the Start Duty overlay. Advances [_startDutyStep] as each phase
+  /// completes; on failure, holds on the failing step with an error message.
+  Future<void> _handleStartDuty(CabDriverOperations data) async {
+    setState(() {
+      _startDutyStep = 0;
+      _startDutyError = null;
+    });
+    try {
+      var resolved = await CabDriverWorkflowSupport.resolveDriverVehicle(data);
+      if (resolved == null) {
+        if (!mounted) return;
+        resolved = await _showVehicleSelectionSheet(context, data);
+        if (resolved == null) {
+          setState(() => _startDutyStep = -1);
+          return;
+        }
+      }
+      setState(() => _startDutyStep = 1);
+      // The controller itself advances through permission, attendance and
+      // location session steps. We tick the overlay optimistically because
+      // startDuty either completes end-to-end or throws; on throw we hold at
+      // whichever step failed so the driver can retry.
+      setState(() => _startDutyStep = 2);
+      final vehicleId = resolved.id;
+      await _action(
+        (current) =>
+            CabDriverWorkflowSupport.startDuty(current, vehicleId: vehicleId),
+        data,
+      );
+      setState(() {
+        _startDutyStep = 4;
+      });
+      // Give the overlay a moment to show completion.
+      await Future<void>.delayed(const Duration(milliseconds: 400));
+      if (!mounted) return;
+      setState(() => _startDutyStep = -1);
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _startDutyError = '$error';
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<CabDriverOperations>(
@@ -112,13 +161,34 @@ class _CabDriverAppState extends State<CabDriverApp> {
         }
         final data = snapshot.data!;
         final pages = [
-          _DriverHome(data: data, busy: _busy, onAction: _action),
+          _DriverHome(
+            data: data,
+            busy: _busy,
+            onAction: _action,
+            onStartDuty: _handleStartDuty,
+          ),
           const MapScreen(cabDriverMode: true),
           _DriverTrips(data: data),
           _DriverProfile(data: data),
         ];
         return Scaffold(
-          body: IndexedStack(index: _index, children: pages),
+          body: Stack(
+            children: [
+              IndexedStack(index: _index, children: pages),
+              if (_startDutyStep >= 0)
+                DriverStartDutyOverlay(
+                  currentStep: _startDutyStep,
+                  errorMessage: _startDutyError,
+                  onCancel: () => setState(() {
+                    _startDutyStep = -1;
+                    _startDutyError = null;
+                  }),
+                  onRetry: _startDutyError == null
+                      ? null
+                      : () => setState(() => _startDutyError = null),
+                ),
+            ],
+          ),
           bottomNavigationBar: NavigationBar(
             selectedIndex: _index,
             onDestinationSelected: (value) => setState(() => _index = value),
@@ -176,7 +246,12 @@ Future<List<_PickupCandidate>> _loadPickupCandidates(
   final employees = await EmployeeService.fetchAllEmployees();
   final driverLocation = data.locations[data.driver.uid];
   final candidates = employees
-      .where((employee) => activeUserIds.contains(employee.uid))
+      .where(
+        (employee) =>
+            employee.uid.trim().isNotEmpty &&
+            employee.uid != data.driver.uid &&
+            activeUserIds.contains(employee.uid),
+      )
       .map((employee) {
         final location = data.locations[employee.uid];
         final distance = driverLocation == null || location == null
@@ -200,6 +275,392 @@ Future<List<_PickupCandidate>> _loadPickupCandidates(
     return a.distanceMeters!.compareTo(b.distanceMeters!);
   });
   return candidates;
+}
+
+/// Nothing-OS styled bottom sheet for the driver to pick their vehicle before
+/// starting duty. Returns the selected [CabVehicleModel] or `null` if the
+/// driver cancelled. Only lists non-inactive vehicles from `cab_vehicles`.
+Future<CabVehicleModel?> _showVehicleSelectionSheet(
+  BuildContext context,
+  CabDriverOperations data,
+) async {
+  return showModalBottomSheet<CabVehicleModel>(
+    context: context,
+    isScrollControlled: true,
+    builder: (sheetContext) {
+      return FutureBuilder<List<CabVehicleModel>>(
+        future: CabManagementController.loadVehicles(),
+        builder: (context, snapshot) {
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 16,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Select Vehicle',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Choose the cab you will drive today.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 12),
+                if (snapshot.connectionState == ConnectionState.waiting)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (snapshot.hasError)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Text('Could not load vehicles: ${snapshot.error}'),
+                    ),
+                  )
+                else
+                  _buildVehicleList(context, snapshot.data ?? const [], data),
+                const SizedBox(height: 12),
+                OutlinedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+Widget _buildVehicleList(
+  BuildContext context,
+  List<CabVehicleModel> vehicles,
+  CabDriverOperations data,
+) {
+  final activeVehicles = vehicles
+      .where(
+        (vehicle) =>
+            vehicle.id.trim().isNotEmpty &&
+            vehicle.status.trim().toLowerCase() != 'inactive',
+      )
+      .toList();
+  if (activeVehicles.isEmpty) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 24),
+      child: Center(
+        child: Text('No vehicles are available. Contact your operations team.'),
+      ),
+    );
+  }
+  final preferredId = data.driver.vehicleNumber.trim();
+  activeVehicles.sort((a, b) {
+    final aPreferred =
+        a.id == preferredId ||
+        a.vehicleNumber.toLowerCase() == preferredId.toLowerCase();
+    final bPreferred =
+        b.id == preferredId ||
+        b.vehicleNumber.toLowerCase() == preferredId.toLowerCase();
+    if (aPreferred && !bPreferred) return -1;
+    if (!aPreferred && bPreferred) return 1;
+    return a.vehicleNumber.compareTo(b.vehicleNumber);
+  });
+  return Flexible(
+    child: ListView.separated(
+      shrinkWrap: true,
+      itemCount: activeVehicles.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final vehicle = activeVehicles[index];
+        final isPreferred =
+            vehicle.id == preferredId ||
+            vehicle.vehicleNumber.toLowerCase() == preferredId.toLowerCase();
+        return Material(
+          color: Theme.of(context).colorScheme.surfaceContainer,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: BorderSide(
+              color: isPreferred
+                  ? Theme.of(context).colorScheme.primary
+                  : Theme.of(context).colorScheme.outlineVariant,
+            ),
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () => Navigator.pop(context, vehicle),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                children: [
+                  const Icon(Icons.local_taxi_outlined, size: 28),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          vehicle.vehicleNumber.isEmpty
+                              ? 'Vehicle ${vehicle.id}'
+                              : vehicle.vehicleNumber,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          [
+                            if (vehicle.vehicleModel.isNotEmpty)
+                              vehicle.vehicleModel,
+                            if (vehicle.capacity > 0)
+                              'Capacity ${vehicle.capacity}',
+                            vehicle.status,
+                          ].join(' · '),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (isPreferred)
+                    const Icon(Icons.check_circle, color: AppColors.success)
+                  else
+                    const Icon(Icons.chevron_right),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
+/// Nothing-OS styled reason picker used before skipping a pickup. Returns
+/// the selected reason (a canonical label or a free-text entry) or null when
+/// the driver cancels.
+Future<String?> _showSkipReasonDialog(
+  BuildContext context,
+  CabDriverOperations data,
+) async {
+  const reasons = <String>[
+    'Employee unavailable',
+    'Employee cancelled',
+    'Wrong location',
+    'Driver instructed by Admin',
+    'Other',
+  ];
+  final activeRider = data.activeRider;
+  final riderName = activeRider == null
+      ? 'this employee'
+      : data.employees[activeRider.employeeId]?.name ?? 'this employee';
+  final controller = TextEditingController();
+  String selected = reasons.first;
+  return showDialog<String>(
+    context: context,
+    builder: (dialogContext) {
+      return StatefulBuilder(
+        builder: (dialogContext, setState) {
+          return AlertDialog(
+            title: Text('Skip $riderName?'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Choose a reason:'),
+                  const SizedBox(height: 8),
+                  ...reasons.map(
+                    (reason) => ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(
+                        selected == reason
+                            ? Icons.radio_button_checked
+                            : Icons.radio_button_unchecked,
+                      ),
+                      title: Text(reason),
+                      onTap: () => setState(() => selected = reason),
+                    ),
+                  ),
+                  if (selected == 'Other') ...[
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: controller,
+                      minLines: 1,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Describe the reason',
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final text = selected == 'Other'
+                      ? controller.text.trim()
+                      : selected;
+                  if (text.isEmpty) return;
+                  Navigator.pop(dialogContext, text);
+                },
+                child: const Text('Skip'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+}
+
+/// Nothing-OS styled Trip Summary sheet shown before Complete Trip. Every
+/// metric comes from live Firestore data; unavailable values are shown as
+/// dashes rather than fabricated numbers. Returns true when the driver
+/// confirms Complete Trip.
+Future<bool?> _showTripSummarySheet(
+  BuildContext context,
+  CabDriverOperations data,
+) async {
+  return showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    builder: (sheetContext) {
+      return FutureBuilder<CabTripSummary?>(
+        future: CabDriverWorkflowSupport.summariseActiveTrip(data),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 48),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          final summary = snapshot.data;
+          return Padding(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 16,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Trip Summary',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Review the summary before completing the trip.',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+                const SizedBox(height: 16),
+                _summaryRow(
+                  context,
+                  'Employees Transported',
+                  summary == null ? '—' : '${summary.completedPickups}',
+                ),
+                _summaryRow(
+                  context,
+                  'Total Selected',
+                  summary == null ? '—' : '${summary.totalEmployees}',
+                ),
+                _summaryRow(
+                  context,
+                  'Skipped',
+                  summary == null ? '—' : '${summary.skipped}',
+                ),
+                _summaryRow(
+                  context,
+                  'Distance',
+                  summary == null || summary.distanceKm <= 0
+                      ? '—'
+                      : '${summary.distanceKm.toStringAsFixed(1)} km',
+                ),
+                _summaryRow(
+                  context,
+                  'Trip Duration',
+                  summary == null
+                      ? '—'
+                      : _humaniseDuration(summary.tripDurationSeconds),
+                ),
+                _summaryRow(
+                  context,
+                  'Driving Time',
+                  summary == null || summary.drivingSeconds <= 0
+                      ? '—'
+                      : _humaniseDuration(summary.drivingSeconds),
+                ),
+                _summaryRow(
+                  context,
+                  'Waiting Time',
+                  summary == null || summary.waitingSeconds <= 0
+                      ? '—'
+                      : _humaniseDuration(summary.waitingSeconds),
+                ),
+                const SizedBox(height: 20),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => Navigator.pop(sheetContext, false),
+                        child: const Text('Not Yet'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => Navigator.pop(sheetContext, true),
+                        icon: const Icon(Icons.task_alt),
+                        label: const Text('Complete Trip'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      );
+    },
+  );
+}
+
+Widget _summaryRow(BuildContext context, String label, String value) {
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: Theme.of(context).textTheme.bodyMedium),
+        Text(
+          value,
+          style: Theme.of(
+            context,
+          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600),
+        ),
+      ],
+    ),
+  );
+}
+
+String _humaniseDuration(int totalSeconds) {
+  if (totalSeconds <= 0) return '0m';
+  final hours = totalSeconds ~/ 3600;
+  final minutes = (totalSeconds % 3600) ~/ 60;
+  if (hours <= 0) return '${minutes}m';
+  return '${hours}h ${minutes.toString().padLeft(2, '0')}m';
 }
 
 Future<void> _showStartTripSheet(
@@ -340,7 +801,7 @@ Future<void> _showStartTripSheet(
                             ? null
                             : () async {
                                 Navigator.of(context).pop();
-                                await CabDriverController.startTripWithEmployees(
+                                await CabDriverWorkflowSupport.startTripWithEmployees(
                                   data,
                                   selected.toList(),
                                 );
@@ -367,11 +828,13 @@ class _DriverHome extends StatelessWidget {
     CabDriverOperations data,
   )
   onAction;
+  final Future<void> Function(CabDriverOperations data) onStartDuty;
 
   const _DriverHome({
     required this.data,
     required this.busy,
     required this.onAction,
+    required this.onStartDuty,
   });
 
   @override
@@ -498,6 +961,7 @@ class _DriverHome extends StatelessWidget {
               busy: busy,
               onAction: onAction,
               onStartTripSheet: _showStartTripSheet,
+              onStartDuty: onStartDuty,
             ),
           ],
         ),
@@ -516,12 +980,14 @@ class _Actions extends StatelessWidget {
   onAction;
   final Future<void> Function(BuildContext, CabDriverOperations)
   onStartTripSheet;
+  final Future<void> Function(CabDriverOperations) onStartDuty;
 
   const _Actions({
     required this.data,
     required this.busy,
     required this.onAction,
     required this.onStartTripSheet,
+    required this.onStartDuty,
   });
 
   @override
@@ -534,18 +1000,21 @@ class _Actions extends StatelessWidget {
         runSpacing: 9,
         children: [
           if (!data.dutyActive)
-            _button(
-              'Start Duty',
-              Icons.play_circle_outline,
-              true,
-              CabDriverController.startDuty,
+            FilledButton.icon(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      await onStartDuty(data);
+                    },
+              icon: const Icon(Icons.play_circle_outline),
+              label: const Text('Start Duty'),
             ),
           if (data.dutyActive)
             _button(
               'End Duty',
               Icons.stop_circle_outlined,
               trip == null,
-              CabDriverController.endDuty,
+              CabDriverWorkflowSupport.endDuty,
               color: AppColors.error,
             ),
           if (data.dutyActive && trip == null) _startTripButton(context, data),
@@ -554,7 +1023,7 @@ class _Actions extends StatelessWidget {
               'Resume Trip',
               Icons.play_arrow,
               true,
-              CabDriverController.startOrResumeTrip,
+              CabDriverWorkflowSupport.startOrResumeTrip,
             ),
           if (trip?.status == 'active' &&
               rider != null &&
@@ -573,19 +1042,48 @@ class _Actions extends StatelessWidget {
               true,
               CabDriverController.pickedUp,
             ),
+          if (trip?.status == 'active' && rider?.status == 'waiting')
+            OutlinedButton.icon(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      final reason = await _showSkipReasonDialog(context, data);
+                      if (reason == null || !context.mounted) return;
+                      await onAction(
+                        (current) => CabDriverWorkflowSupport.skipRider(
+                          current,
+                          reason: reason,
+                        ),
+                        data,
+                      );
+                    },
+              icon: const Icon(Icons.skip_next_outlined),
+              label: const Text('Skip'),
+            ),
           if (trip?.status == 'active' && rider == null)
             _button(
-              'Reached Destination',
+              'Reached Office',
               Icons.flag_outlined,
               true,
-              CabDriverController.reachedDestination,
+              CabDriverWorkflowSupport.reachedDestination,
             ),
           if (trip?.status == 'office_arrived')
-            _button(
-              'Complete Current Trip',
-              Icons.task_alt,
-              true,
-              CabDriverController.completeTrip,
+            FilledButton.icon(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      final confirmed = await _showTripSummarySheet(
+                        context,
+                        data,
+                      );
+                      if (confirmed != true || !context.mounted) return;
+                      await onAction(
+                        CabDriverWorkflowSupport.completeTrip,
+                        data,
+                      );
+                    },
+              icon: const Icon(Icons.task_alt),
+              label: const Text('Review & Complete Trip'),
             ),
         ],
       ),

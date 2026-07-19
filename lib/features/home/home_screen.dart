@@ -19,6 +19,7 @@ import '../notifications/notification_center_screen.dart';
 import '../profile/controllers/profile_controller.dart';
 import '../profile/profile_screen.dart';
 import '../reports/reports_screen.dart';
+import 'widgets/employee_cab_tracking_card.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -361,6 +362,8 @@ class _DashboardContent extends StatelessWidget {
                       );
                     },
                   ),
+                  const SizedBox(height: 12),
+                  const EmployeeCabTrackingCard(),
                   const SizedBox(height: 12),
                   _OperationsHubCard(
                     todayVisits: todayVisits,

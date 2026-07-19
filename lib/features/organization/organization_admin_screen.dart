@@ -18,7 +18,10 @@ import '../manager/manager_screen.dart';
 import '../map/map_screen.dart';
 import '../notifications/notification_center_screen.dart';
 import '../reports/reports_screen.dart';
+import 'admin_fleet_analytics_screen.dart';
+import 'admin_live_people_map_screen.dart';
 import 'controllers/organization_controller.dart';
+import 'widgets/admin_cab_kpi_cards.dart';
 import 'services/organization_service.dart';
 
 class OrganizationAdminScreen extends StatefulWidget {
@@ -246,8 +249,14 @@ class _OrganizationAdminScreenState extends State<OrganizationAdminScreen> {
           ),
         ),
         const _Section(
-          title: 'Cab Operations Analytics',
+          title: 'Cab Operations KPIs',
           icon: Icons.local_taxi_outlined,
+          initiallyExpanded: true,
+          child: AdminCabKpiCards(),
+        ),
+        const _Section(
+          title: 'Cab Operations Analytics',
+          icon: Icons.query_stats_outlined,
           child: CabAnalyticsDashboard(),
         ),
         const _Section(
@@ -851,9 +860,14 @@ class _QuickActions extends StatelessWidget {
         () => _push(context, const ReportsScreen()),
       ),
       (
-        'Fleet',
+        'Live People Map',
+        Icons.map_outlined,
+        () => _push(context, const AdminLivePeopleMapScreen()),
+      ),
+      (
+        'Fleet Analytics',
         Icons.local_shipping_outlined,
-        () => _push(context, const MapScreen()),
+        () => _push(context, const AdminFleetAnalyticsScreen()),
       ),
       (
         'Employees',
