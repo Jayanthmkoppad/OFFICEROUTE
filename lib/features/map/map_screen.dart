@@ -305,9 +305,10 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   void _animateCabMarker(CabMapContext? cab) {
-    final assignment = cab?.assignment;
+    if (cab == null) return;
+    final assignment = cab.assignment;
     if (assignment == null) return;
-    final location = cab!.liveLocationsByUserId[assignment.driverId];
+    final location = cab.liveLocationsByUserId[assignment.driverId];
     if (location == null) return;
     final target = LatLng(location.latitude, location.longitude);
     final start = _animatedCabPosition ?? target;
@@ -1895,6 +1896,58 @@ class _UnassignedCabPanel extends StatelessWidget {
   }
 }
 
+double? _distanceBetweenLocations(
+  LiveLocationModel? from,
+  LiveLocationModel? to,
+) {
+  if (from == null || to == null) return null;
+  return LocationTrackingPolicy.distanceMeters(
+    from.latitude,
+    from.longitude,
+    to.latitude,
+    to.longitude,
+  );
+}
+
+int? _etaSecondsForDistance(double? distanceMeters, double? liveSpeed) {
+  if (distanceMeters == null) return null;
+  final metersPerSecond = liveSpeed != null && liveSpeed > 1 ? liveSpeed : 8.33;
+  return (distanceMeters / metersPerSecond).round().clamp(60, 86400).toInt();
+}
+
+String _formatPickupDistance(double? distanceMeters) {
+  if (distanceMeters == null) return '--';
+  if (distanceMeters >= 1000) {
+    return '${(distanceMeters / 1000).toStringAsFixed(1)} km';
+  }
+  return '${distanceMeters.round()} m';
+}
+
+String _formatPickupEta(int? etaSeconds) {
+  if (etaSeconds == null) return '--';
+  return '${(etaSeconds / 60).ceil()} min';
+}
+
+List<CabAssignmentMemberModel> _pendingPickupMembers(CabMapContext cab) {
+  final members = cab.members
+      .where(
+        (member) =>
+            member.role == 'employee' &&
+            const {'assigned', 'ready', 'waiting'}.contains(member.status),
+      )
+      .toList(growable: false);
+  members.sort((a, b) {
+    const priority = <String, int>{'waiting': 0, 'ready': 1, 'assigned': 2};
+    final first = priority[a.status] ?? 9;
+    final second = priority[b.status] ?? 9;
+    if (first != second) return first.compareTo(second);
+    final aName = cab.usersById[a.userId]?.name ?? a.userId;
+    final bName = cab.usersById[b.userId]?.name ?? b.userId;
+    return aName.toLowerCase().compareTo(bName.toLowerCase());
+  });
+  return members;
+}
+
 class _DriverCabPanel extends StatelessWidget {
   final bool readOnlyWorkflow;
   final CabMapContext cab;
@@ -1926,22 +1979,22 @@ class _DriverCabPanel extends StatelessWidget {
     final driver = cab.usersById[assignment.driverId];
     final tripStatus = cab.activeTrip?.status ?? assignment.status;
     final driverLocation = cab.liveLocationsByUserId[assignment.driverId];
-    final nextMember = cab.readyMembers.firstOrNull;
+    final pendingMembers = _pendingPickupMembers(cab);
+    final nextMember = pendingMembers.isEmpty ? null : pendingMembers.first;
     final nextLocation = nextMember == null
         ? null
         : cab.liveLocationsByUserId[nextMember.userId];
-    final distanceMeters = driverLocation == null || nextLocation == null
-        ? null
-        : LocationTrackingPolicy.distanceMeters(
-            driverLocation.latitude,
-            driverLocation.longitude,
-            nextLocation.latitude,
-            nextLocation.longitude,
-          );
-    final liveSpeed = driverLocation?.speed ?? 0;
-    final etaSeconds = distanceMeters == null || liveSpeed <= 1
-        ? null
-        : (distanceMeters / liveSpeed).round();
+    final distanceMeters = _distanceBetweenLocations(
+      driverLocation,
+      nextLocation,
+    );
+    final etaSeconds = _etaSecondsForDistance(
+      distanceMeters,
+      driverLocation?.speed,
+    );
+    final nextName = nextMember == null
+        ? '--'
+        : cab.usersById[nextMember.userId]?.name ?? 'Employee';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1987,25 +2040,26 @@ class _DriverCabPanel extends StatelessWidget {
                         : '--'),
             ),
             _MetricTile(
+              icon: Icons.person_pin_circle_outlined,
+              label: 'Next Employee',
+              value: nextName,
+            ),
+            _MetricTile(
               icon: Icons.straighten_outlined,
-              label: 'Next Pickup',
-              value: distanceMeters == null
-                  ? '--'
-                  : distanceMeters >= 1000
-                  ? '${(distanceMeters / 1000).toStringAsFixed(1)} km'
-                  : '${distanceMeters.round()} m',
+              label: 'Next Distance',
+              value: _formatPickupDistance(distanceMeters),
             ),
             _MetricTile(
               icon: Icons.schedule_outlined,
               label: 'Live ETA',
-              value: etaSeconds == null
-                  ? '--'
-                  : '${(etaSeconds / 60).ceil()} min',
+              value: _formatPickupEta(etaSeconds),
             ),
           ],
         ),
         const SizedBox(height: 12),
         _CabCounts(cab: cab),
+        const SizedBox(height: 12),
+        _DriverPickupQueue(cab: cab, driverLocation: driverLocation),
         const SizedBox(height: 12),
         if (!readOnlyWorkflow) ...[
           _ActionRow(
@@ -2035,6 +2089,144 @@ class _DriverCabPanel extends StatelessWidget {
           _EmployeeActionList(cab: cab, onMarkMemberStatus: onMarkMemberStatus),
         ],
       ],
+    );
+  }
+}
+
+class _DriverPickupQueue extends StatelessWidget {
+  final CabMapContext cab;
+  final LiveLocationModel? driverLocation;
+
+  const _DriverPickupQueue({required this.cab, required this.driverLocation});
+
+  @override
+  Widget build(BuildContext context) {
+    final members = cab.members
+        .where((member) => member.role == 'employee')
+        .toList(growable: false);
+
+    if (members.isEmpty) {
+      return const _DashboardEmptyState(
+        icon: Icons.groups_outlined,
+        message: 'No employees selected for this trip yet.',
+      );
+    }
+
+    members.sort((a, b) {
+      const priority = <String, int>{
+        'waiting': 0,
+        'ready': 1,
+        'assigned': 2,
+        'picked_up': 3,
+        'boarded': 4,
+        'dropped': 5,
+        'no_show': 6,
+      };
+      final first = priority[a.status] ?? 9;
+      final second = priority[b.status] ?? 9;
+      if (first != second) return first.compareTo(second);
+      final aName = cab.usersById[a.userId]?.name ?? a.userId;
+      final bName = cab.usersById[b.userId]?.name ?? b.userId;
+      return aName.toLowerCase().compareTo(bName.toLowerCase());
+    });
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _PanelHeader(title: 'Pickup Queue'),
+        const SizedBox(height: 8),
+        for (final member in members.take(8))
+          _DriverPickupQueueRow(
+            cab: cab,
+            member: member,
+            driverLocation: driverLocation,
+          ),
+      ],
+    );
+  }
+}
+
+class _DriverPickupQueueRow extends StatelessWidget {
+  final CabMapContext cab;
+  final CabAssignmentMemberModel member;
+  final LiveLocationModel? driverLocation;
+
+  const _DriverPickupQueueRow({
+    required this.cab,
+    required this.member,
+    required this.driverLocation,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final profile = cab.usersById[member.userId];
+    final location = cab.liveLocationsByUserId[member.userId];
+    final distance = _distanceBetweenLocations(driverLocation, location);
+    final eta = _etaSecondsForDistance(distance, driverLocation?.speed);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.black.withAlpha(84),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withAlpha(22)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(9),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 17,
+                backgroundColor: AppColors.info.withAlpha(24),
+                child: Text(
+                  profile == null || profile.name.trim().isEmpty
+                      ? '?'
+                      : profile.name.trim()[0].toUpperCase(),
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      profile?.name ?? 'Employee',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${_titleCase(member.status.replaceAll('_', ' '))} | '
+                      '${_formatPickupDistance(distance)} | '
+                      '${_formatPickupEta(eta)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textSecondary,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(
+                location == null
+                    ? Icons.location_off_outlined
+                    : Icons.location_on_outlined,
+                color: location == null ? AppColors.warning : AppColors.success,
+                size: 18,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -2824,14 +3016,19 @@ class _EmployeeActionList extends StatelessWidget {
         .where(
           (member) =>
               member.role == 'employee' &&
-              (member.status == 'ready' || member.status == 'picked_up'),
+              const {
+                'assigned',
+                'ready',
+                'waiting',
+                'picked_up',
+              }.contains(member.status),
         )
-        .take(4)
+        .take(8)
         .toList(growable: false);
 
     if (candidates.isEmpty) {
       return const Text(
-        'No ready employees yet.',
+        'No selected employees yet.',
         style: AppTextStyles.bodyMedium,
       );
     }
@@ -4120,11 +4317,13 @@ Set<Marker> _cabMarkers(
     );
   }
 
-  for (final member in cab.readyMembers) {
+  for (final member in cab.members.where(
+    (member) => member.role == 'employee',
+  )) {
     final location = cab.liveLocationsByUserId[member.userId];
     if (location == null) continue;
     final profile = cab.usersById[member.userId];
-    final markerId = 'ready_${member.userId}';
+    final markerId = 'employee_';
     final position = LatLng(location.latitude, location.longitude);
     markers.add(
       Marker(
@@ -4132,11 +4331,15 @@ Set<Marker> _cabMarkers(
         position: position,
         icon: _markerIcon(
           selected: selectedMarkerId == markerId,
-          hue: BitmapDescriptor.hueGreen,
+          hue: member.status == 'picked_up' || member.status == 'boarded'
+              ? BitmapDescriptor.hueOrange
+              : member.status == 'waiting' || member.status == 'ready'
+              ? BitmapDescriptor.hueGreen
+              : BitmapDescriptor.hueYellow,
         ),
         infoWindow: InfoWindow(
-          title: profile?.name ?? 'Ready Employee',
-          snippet: 'Ready - ${_relativeTime(location.updatedAt)}',
+          title: profile?.name ?? 'Employee',
+          snippet: ' - ',
         ),
         onTap: () => onMarkerSelected(markerId, position),
       ),
