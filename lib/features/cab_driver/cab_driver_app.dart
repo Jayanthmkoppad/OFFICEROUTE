@@ -6,7 +6,6 @@ import '../../core/models/cab_assignment_model.dart';
 import '../../core/models/cab_trip_event_model.dart';
 import '../../core/models/cab_trip_model.dart';
 import '../../core/models/cab_trip_rider_model.dart';
-import '../../core/models/cab_vehicle_model.dart';
 import '../../core/models/live_location_model.dart';
 import '../../core/models/user_model.dart';
 import '../../core/controllers/cab_management_controller.dart';
@@ -23,7 +22,6 @@ import '../map/map_screen.dart';
 import '../notifications/notification_center_screen.dart';
 import 'controllers/cab_driver_controller.dart';
 import 'cab_driver_workflow_support.dart';
-import 'widgets/driver_start_duty_overlay.dart';
 
 class CabDriverApp extends StatefulWidget {
   const CabDriverApp({super.key});
@@ -39,8 +37,6 @@ class _CabDriverAppState extends State<CabDriverApp> {
   Timer? _clock;
   int _index = 0;
   bool _busy = false;
-  int _startDutyStep = -1;
-  String? _startDutyError;
 
   @override
   void initState() {
@@ -95,48 +91,16 @@ class _CabDriverAppState extends State<CabDriverApp> {
     }
   }
 
-  /// Drives the Start Duty overlay. Advances [_startDutyStep] as each phase
-  /// completes; on failure, holds on the failing step with an error message.
   Future<void> _handleStartDuty(CabDriverOperations data) async {
-    setState(() {
-      _startDutyStep = 0;
-      _startDutyError = null;
-    });
-    try {
-      var resolved = await CabDriverWorkflowSupport.resolveDriverVehicle(data);
-      if (resolved == null) {
-        if (!mounted) return;
-        resolved = await _showVehicleSelectionSheet(context, data);
-        if (resolved == null) {
-          setState(() => _startDutyStep = -1);
-          return;
-        }
-      }
-      setState(() => _startDutyStep = 1);
-      // The controller itself advances through permission, attendance and
-      // location session steps. We tick the overlay optimistically because
-      // startDuty either completes end-to-end or throws; on throw we hold at
-      // whichever step failed so the driver can retry.
-      setState(() => _startDutyStep = 2);
-      final vehicleId = resolved.id;
-      await _action(
-        (current) =>
-            CabDriverWorkflowSupport.startDuty(current, vehicleId: vehicleId),
-        data,
+    await _action((current) async {
+      final vehicle = await CabDriverWorkflowSupport.resolveDriverVehicle(
+        current,
       );
-      setState(() {
-        _startDutyStep = 4;
-      });
-      // Give the overlay a moment to show completion.
-      await Future<void>.delayed(const Duration(milliseconds: 400));
-      if (!mounted) return;
-      setState(() => _startDutyStep = -1);
-    } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _startDutyError = '$error';
-      });
-    }
+      if (vehicle == null || vehicle.id.trim().isEmpty) {
+        throw StateError('Unable to prepare Start Duty. Please retry.');
+      }
+      await CabDriverWorkflowSupport.startDuty(current, vehicleId: vehicle.id);
+    }, data);
   }
 
   @override
@@ -172,23 +136,7 @@ class _CabDriverAppState extends State<CabDriverApp> {
           _DriverProfile(data: data),
         ];
         return Scaffold(
-          body: Stack(
-            children: [
-              IndexedStack(index: _index, children: pages),
-              if (_startDutyStep >= 0)
-                DriverStartDutyOverlay(
-                  currentStep: _startDutyStep,
-                  errorMessage: _startDutyError,
-                  onCancel: () => setState(() {
-                    _startDutyStep = -1;
-                    _startDutyError = null;
-                  }),
-                  onRetry: _startDutyError == null
-                      ? null
-                      : () => setState(() => _startDutyError = null),
-                ),
-            ],
-          ),
+          body: IndexedStack(index: _index, children: pages),
           bottomNavigationBar: NavigationBar(
             selectedIndex: _index,
             onDestinationSelected: (value) => setState(() => _index = value),
@@ -275,168 +223,6 @@ Future<List<_PickupCandidate>> _loadPickupCandidates(
     return a.distanceMeters!.compareTo(b.distanceMeters!);
   });
   return candidates;
-}
-
-/// Nothing-OS styled bottom sheet for the driver to pick their vehicle before
-/// starting duty. Returns the selected [CabVehicleModel] or `null` if the
-/// driver cancelled. Only lists non-inactive vehicles from `cab_vehicles`.
-Future<CabVehicleModel?> _showVehicleSelectionSheet(
-  BuildContext context,
-  CabDriverOperations data,
-) async {
-  return showModalBottomSheet<CabVehicleModel>(
-    context: context,
-    isScrollControlled: true,
-    builder: (sheetContext) {
-      return FutureBuilder<List<CabVehicleModel>>(
-        future: CabManagementController.loadVehicles(),
-        builder: (context, snapshot) {
-          return Padding(
-            padding: EdgeInsets.only(
-              left: 16,
-              right: 16,
-              top: 16,
-              bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Select Vehicle',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Choose the cab you will drive today.',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 12),
-                if (snapshot.connectionState == ConnectionState.waiting)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (snapshot.hasError)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 24),
-                    child: Center(
-                      child: Text('Could not load vehicles: ${snapshot.error}'),
-                    ),
-                  )
-                else
-                  _buildVehicleList(context, snapshot.data ?? const [], data),
-                const SizedBox(height: 12),
-                OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-              ],
-            ),
-          );
-        },
-      );
-    },
-  );
-}
-
-Widget _buildVehicleList(
-  BuildContext context,
-  List<CabVehicleModel> vehicles,
-  CabDriverOperations data,
-) {
-  final activeVehicles = vehicles
-      .where(
-        (vehicle) =>
-            vehicle.id.trim().isNotEmpty &&
-            vehicle.status.trim().toLowerCase() != 'inactive',
-      )
-      .toList();
-  if (activeVehicles.isEmpty) {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 24),
-      child: Center(
-        child: Text('No vehicles are available. Contact your operations team.'),
-      ),
-    );
-  }
-  final preferredId = data.driver.vehicleNumber.trim();
-  activeVehicles.sort((a, b) {
-    final aPreferred =
-        a.id == preferredId ||
-        a.vehicleNumber.toLowerCase() == preferredId.toLowerCase();
-    final bPreferred =
-        b.id == preferredId ||
-        b.vehicleNumber.toLowerCase() == preferredId.toLowerCase();
-    if (aPreferred && !bPreferred) return -1;
-    if (!aPreferred && bPreferred) return 1;
-    return a.vehicleNumber.compareTo(b.vehicleNumber);
-  });
-  return Flexible(
-    child: ListView.separated(
-      shrinkWrap: true,
-      itemCount: activeVehicles.length,
-      separatorBuilder: (context, index) => const SizedBox(height: 8),
-      itemBuilder: (context, index) {
-        final vehicle = activeVehicles[index];
-        final isPreferred =
-            vehicle.id == preferredId ||
-            vehicle.vehicleNumber.toLowerCase() == preferredId.toLowerCase();
-        return Material(
-          color: Theme.of(context).colorScheme.surfaceContainer,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-            side: BorderSide(
-              color: isPreferred
-                  ? Theme.of(context).colorScheme.primary
-                  : Theme.of(context).colorScheme.outlineVariant,
-            ),
-          ),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: () => Navigator.pop(context, vehicle),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child: Row(
-                children: [
-                  const Icon(Icons.local_taxi_outlined, size: 28),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          vehicle.vehicleNumber.isEmpty
-                              ? 'Vehicle ${vehicle.id}'
-                              : vehicle.vehicleNumber,
-                          style: Theme.of(context).textTheme.titleMedium,
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          [
-                            if (vehicle.vehicleModel.isNotEmpty)
-                              vehicle.vehicleModel,
-                            if (vehicle.capacity > 0)
-                              'Capacity ${vehicle.capacity}',
-                            vehicle.status,
-                          ].join(' · '),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (isPreferred)
-                    const Icon(Icons.check_circle, color: AppColors.success)
-                  else
-                    const Icon(Icons.chevron_right),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    ),
-  );
 }
 
 /// Nothing-OS styled reason picker used before skipping a pickup. Returns

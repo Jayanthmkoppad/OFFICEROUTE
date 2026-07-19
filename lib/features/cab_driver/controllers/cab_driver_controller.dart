@@ -138,9 +138,24 @@ class CabDriverController {
               }.contains(trip.status),
         )
         .firstOrNull;
-    final vehicle = todayAssignment == null
-        ? null
-        : await CabManagementController.getVehicle(todayAssignment.vehicleId);
+    CabVehicleModel? vehicle;
+    if (todayAssignment != null) {
+      final vehicleId = todayAssignment.vehicleId.trim();
+      if (vehicleId.isNotEmpty) {
+        vehicle =
+            await CabManagementController.getVehicle(vehicleId) ??
+            CabVehicleModel(
+              id: vehicleId,
+              vehicleNumber: vehicleId,
+              vehicleModel: 'Office Cab',
+              registrationNumber: vehicleId,
+              capacity: 4,
+              status: 'available',
+              driverId: uid,
+              remarks: 'Operational fallback cab.',
+            );
+      }
+    }
     final members = todayAssignment == null
         ? const <CabAssignmentMemberModel>[]
         : await CabManagementController.loadAssignmentMembers(

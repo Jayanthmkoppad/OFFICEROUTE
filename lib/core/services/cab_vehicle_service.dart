@@ -63,10 +63,23 @@ class CabVehicleService {
 
   static Future<List<CabVehicleModel>> fetchAllVehicles() async {
     try {
-      final snapshot = await _collection.orderBy('vehicleNumber').get();
-      return snapshot.docs
+      final snapshot = await _collection.get();
+      final vehicles = snapshot.docs
           .map((doc) => CabVehicleModel.fromMap(doc.data(), id: doc.id))
+          .where((vehicle) => vehicle.id.trim().isNotEmpty)
           .toList();
+
+      vehicles.sort((a, b) {
+        final aLabel = a.vehicleNumber.trim().isEmpty
+            ? a.id
+            : a.vehicleNumber.trim();
+        final bLabel = b.vehicleNumber.trim().isEmpty
+            ? b.id
+            : b.vehicleNumber.trim();
+        return aLabel.toLowerCase().compareTo(bLabel.toLowerCase());
+      });
+
+      return vehicles;
     } catch (error, stackTrace) {
       _printFirestoreException(
         error: error,

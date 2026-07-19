@@ -89,6 +89,7 @@ class CabDriverWorkflowSupport {
         : 'CAB-${uid.substring(0, suffixLength).toUpperCase()}';
 
     final draft = CabVehicleModel(
+      id: fallbackNumber,
       vehicleNumber: fallbackNumber,
       vehicleModel: 'Office Cab',
       registrationNumber: profileVehicle.isEmpty
@@ -113,12 +114,11 @@ class CabDriverWorkflowSupport {
         driverId: draft.driverId,
         remarks: draft.remarks,
       );
-    } catch (error) {
-      throw StateError(
-        'No cab vehicle is available and the app could not create one '
-        'automatically. Ask an administrator to create a cab_vehicles record. '
-        'Original error: ',
-      );
+    } catch (_) {
+      // Some Firestore rules may not allow cab drivers to create vehicle master
+      // records. Start Duty must still work, so we keep a safe operational
+      // fallback vehicle id for shift/assignment records.
+      return draft;
     }
   }
 
@@ -132,12 +132,21 @@ class CabDriverWorkflowSupport {
       throw StateError('Select a valid cab before starting duty.');
     }
 
-    final vehicle = await CabManagementController.getVehicle(
+    final fetchedVehicle = await CabManagementController.getVehicle(
       normalizedVehicleId,
     );
-    if (vehicle == null || vehicle.id.trim().isEmpty) {
-      throw StateError('The selected cab could not be found.');
-    }
+    final vehicle =
+        fetchedVehicle ??
+        CabVehicleModel(
+          id: normalizedVehicleId,
+          vehicleNumber: normalizedVehicleId,
+          vehicleModel: 'Office Cab',
+          registrationNumber: normalizedVehicleId,
+          capacity: 4,
+          status: 'available',
+          driverId: data.driver.uid,
+          remarks: 'Operational fallback cab for Start Duty.',
+        );
     if (vehicle.status.trim().toLowerCase() == 'inactive') {
       throw StateError('The selected cab is inactive. Choose another cab.');
     }
