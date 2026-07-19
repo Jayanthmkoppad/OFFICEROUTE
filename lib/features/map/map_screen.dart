@@ -37,6 +37,8 @@ class MapScreen extends StatefulWidget {
 class _MapScreenState extends State<MapScreen> {
   late Future<_MapScreenData> _mapFuture;
   late Future<_MapModePayload> _modeFuture;
+  _MapScreenData? _lastMapData;
+  _MapModePayload? _lastModePayload;
   GoogleMapController? _mapController;
   MapType _mapType = MapType.normal;
   late _MapMode _selectedMode;
@@ -921,32 +923,41 @@ class _MapScreenState extends State<MapScreen> {
       body: FutureBuilder<_MapScreenData>(
         future: _mapFuture,
         builder: (context, mapSnapshot) {
-          if (mapSnapshot.connectionState == ConnectionState.waiting) {
+          if (mapSnapshot.hasData) {
+            _lastMapData = mapSnapshot.data;
+          }
+          final data = mapSnapshot.data ?? _lastMapData;
+
+          if (mapSnapshot.connectionState == ConnectionState.waiting &&
+              data == null) {
             return const _MapLoadingView();
           }
 
-          if (mapSnapshot.hasError) {
+          if ((mapSnapshot.hasError || data == null) && data == null) {
             return _MapErrorView(error: mapSnapshot.error, onRetry: _reloadMap);
           }
 
-          final data = mapSnapshot.data;
-          if (data == null) {
-            return _MapErrorView(
-              error: 'Location unavailable',
-              onRetry: _reloadMap,
-            );
-          }
+          final stableData = data;
 
           return FutureBuilder<_MapModePayload>(
             future: _modeFuture,
             builder: (context, modeSnapshot) {
+              if (modeSnapshot.hasData) {
+                _lastModePayload = modeSnapshot.data;
+              }
+              final stablePayload =
+                  modeSnapshot.data ??
+                  _lastModePayload ??
+                  const _MapModePayload();
+
               return _MapExperience(
-                data: data,
+                data: stableData,
                 now: _now,
                 mode: _selectedMode,
-                modePayload: modeSnapshot.data ?? const _MapModePayload(),
+                modePayload: stablePayload,
                 modeLoading:
-                    modeSnapshot.connectionState == ConnectionState.waiting,
+                    modeSnapshot.connectionState == ConnectionState.waiting &&
+                    _lastModePayload == null,
                 modeError: modeSnapshot.error,
                 modeActionBusy: _modeActionBusy,
                 selectedMarkerId: _selectedMarkerId,
@@ -966,9 +977,9 @@ class _MapScreenState extends State<MapScreen> {
                 },
                 onModeSelected: _selectMode,
                 onModeRetry: _reloadMode,
-                onRecenter: () => _centerOn(data.location),
+                onRecenter: () => _centerOn(stableData.location),
                 onToggleMapType: _toggleMapType,
-                onToggleFollowMe: () => _toggleFollowMe(data.location),
+                onToggleFollowMe: () => _toggleFollowMe(stableData.location),
                 onStartCabTrip: (cab) =>
                     _runCabAction(() => _startCabTrip(cab)),
                 onCompleteCabTrip: (cab) =>
@@ -2108,7 +2119,7 @@ class _DriverPickupQueue extends StatelessWidget {
     if (members.isEmpty) {
       return const _DashboardEmptyState(
         icon: Icons.groups_outlined,
-        message: 'No employees selected for this trip yet.',
+        message: 'No members selected for this trip yet.',
       );
     }
 
@@ -2135,8 +2146,8 @@ class _DriverPickupQueue extends StatelessWidget {
       children: [
         const _PanelHeader(title: 'Pickup Queue'),
         const SizedBox(height: 8),
-        for (final member in members.take(8))
-          _DriverPickupQueueRow(
+        for (final member in members.take(12))
+          _CabMemberDistanceRow(
             cab: cab,
             member: member,
             driverLocation: driverLocation,
@@ -2146,12 +2157,53 @@ class _DriverPickupQueue extends StatelessWidget {
   }
 }
 
-class _DriverPickupQueueRow extends StatelessWidget {
+class _ManagerPickupQueue extends StatelessWidget {
+  final CabMapContext cab;
+  final LiveLocationModel? driverLocation;
+
+  const _ManagerPickupQueue({required this.cab, required this.driverLocation});
+
+  @override
+  Widget build(BuildContext context) {
+    final members = cab.managerMembers
+        .where((member) => member.role == 'employee')
+        .toList(growable: false);
+
+    if (members.isEmpty) {
+      return const _DashboardEmptyState(
+        icon: Icons.groups_outlined,
+        message: 'No cab members selected today.',
+      );
+    }
+
+    members.sort((a, b) {
+      final aName = cab.usersById[a.userId]?.name ?? a.userId;
+      final bName = cab.usersById[b.userId]?.name ?? b.userId;
+      return aName.toLowerCase().compareTo(bName.toLowerCase());
+    });
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _PanelHeader(title: 'Member Distance / ETA'),
+        const SizedBox(height: 8),
+        for (final member in members.take(15))
+          _CabMemberDistanceRow(
+            cab: cab,
+            member: member,
+            driverLocation: driverLocation,
+          ),
+      ],
+    );
+  }
+}
+
+class _CabMemberDistanceRow extends StatelessWidget {
   final CabMapContext cab;
   final CabAssignmentMemberModel member;
   final LiveLocationModel? driverLocation;
 
-  const _DriverPickupQueueRow({
+  const _CabMemberDistanceRow({
     required this.cab,
     required this.member,
     required this.driverLocation,
@@ -2163,6 +2215,12 @@ class _DriverPickupQueueRow extends StatelessWidget {
     final location = cab.liveLocationsByUserId[member.userId];
     final distance = _distanceBetweenLocations(driverLocation, location);
     final eta = _etaSecondsForDistance(distance, driverLocation?.speed);
+    final profileName = profile?.name.trim() ?? '';
+    final profileEmail = profile?.email.trim() ?? '';
+    final name = profileName.isNotEmpty
+        ? profileName
+        : (profileEmail.isNotEmpty ? profileEmail : member.userId);
+    final idLine = profileEmail.isNotEmpty ? profileEmail : member.userId;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 7),
@@ -2180,9 +2238,7 @@ class _DriverPickupQueueRow extends StatelessWidget {
                 radius: 17,
                 backgroundColor: AppColors.info.withAlpha(24),
                 child: Text(
-                  profile == null || profile.name.trim().isEmpty
-                      ? '?'
-                      : profile.name.trim()[0].toUpperCase(),
+                  name.trim().isEmpty ? '?' : name.trim()[0].toUpperCase(),
                 ),
               ),
               const SizedBox(width: 9),
@@ -2191,7 +2247,7 @@ class _DriverPickupQueueRow extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      profile?.name ?? 'Employee',
+                      name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTextStyles.bodyMedium.copyWith(
@@ -2202,9 +2258,17 @@ class _DriverPickupQueueRow extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '${_titleCase(member.status.replaceAll('_', ' '))} | '
-                      '${_formatPickupDistance(distance)} | '
-                      '${_formatPickupEta(eta)}',
+                      '$idLine | ${_titleCase(member.status.replaceAll('_', ' '))}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.caption.copyWith(
+                        color: AppColors.textDisabled,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${_formatPickupDistance(distance)} | ${_formatPickupEta(eta)}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: AppTextStyles.caption.copyWith(
@@ -2503,6 +2567,8 @@ class _ManagerCabPanel extends StatelessWidget {
           value: nextPickupName,
           color: AppColors.textPrimary,
         ),
+        const SizedBox(height: 12),
+        _ManagerPickupQueue(cab: cab, driverLocation: driverLocation),
         const SizedBox(height: 12),
         _ActionRow(
           children: [
@@ -4486,20 +4552,31 @@ Set<Marker> _teamMarkers(
 Set<Polyline> _cabRoutePolylines(CabMapContext? cab) {
   final assignment = cab?.assignment;
   if (cab == null || assignment == null) return const <Polyline>{};
+
   final points = <LatLng>[];
   final driver = cab.liveLocationsByUserId[assignment.driverId];
-  if (driver != null) points.add(LatLng(driver.latitude, driver.longitude));
-  for (final member in cab.readyMembers) {
-    final location = cab.liveLocationsByUserId[member.userId];
-    if (location != null) {
-      points.add(LatLng(location.latitude, location.longitude));
-    }
+  if (driver != null) {
+    points.add(LatLng(driver.latitude, driver.longitude));
   }
+
+  final pendingMembers = _pendingPickupMembers(cab);
+  final orderedMembers = pendingMembers.isEmpty
+      ? cab.members.where((member) => member.role == 'employee')
+      : pendingMembers;
+
+  for (final member in orderedMembers) {
+    final location = cab.liveLocationsByUserId[member.userId];
+    if (location == null) continue;
+    points.add(LatLng(location.latitude, location.longitude));
+  }
+
   if (assignment.officeLatitude != null && assignment.officeLongitude != null) {
     points.add(LatLng(assignment.officeLatitude!, assignment.officeLongitude!));
   }
+
   if (points.length < 2) return const <Polyline>{};
-  return {
+
+  return <Polyline>{
     Polyline(
       polylineId: const PolylineId('cab_active_route'),
       points: points,

@@ -32,6 +32,7 @@ class CabDriverApp extends StatefulWidget {
 
 class _CabDriverAppState extends State<CabDriverApp> {
   late Future<CabDriverOperations> _future;
+  CabDriverOperations? _lastData;
   final List<StreamSubscription<void>> _subscriptions = [];
   Timer? _debounce;
   Timer? _clock;
@@ -108,13 +109,17 @@ class _CabDriverAppState extends State<CabDriverApp> {
     return FutureBuilder<CabDriverOperations>(
       future: _future,
       builder: (context, snapshot) {
+        if (snapshot.hasData) {
+          _lastData = snapshot.data;
+        }
+        final cachedData = snapshot.data ?? _lastData;
         if (snapshot.connectionState == ConnectionState.waiting &&
-            !snapshot.hasData) {
+            cachedData == null) {
           return const Scaffold(
             body: PremiumLoadingState(label: 'Loading driver operations'),
           );
         }
-        if (snapshot.hasError || snapshot.data == null) {
+        if ((snapshot.hasError || cachedData == null) && cachedData == null) {
           return Scaffold(
             body: PremiumErrorState(
               title: 'Driver operations could not be loaded.',
@@ -123,7 +128,7 @@ class _CabDriverAppState extends State<CabDriverApp> {
             ),
           );
         }
-        final data = snapshot.data!;
+        final data = cachedData;
         final pages = [
           _DriverHome(
             data: data,
@@ -173,11 +178,13 @@ class _PickupCandidate {
   final EmployeeModel employee;
   final LiveLocationModel? location;
   final double? distanceMeters;
+  final bool checkedIn;
 
   _PickupCandidate({
     required this.employee,
     required this.location,
     required this.distanceMeters,
+    required this.checkedIn,
   });
 }
 
@@ -191,17 +198,17 @@ Future<List<_PickupCandidate>> _loadPickupCandidates(
       .where((record) => record.isCheckedIn)
       .map((record) => record.userId)
       .toSet();
-  final employees = await EmployeeService.fetchAllEmployees();
+
+  final users = await EmployeeService.fetchAllEmployees();
   final driverLocation = data.locations[data.driver.uid];
-  final candidates = employees
-      .where(
-        (employee) =>
-            employee.uid.trim().isNotEmpty &&
-            employee.uid != data.driver.uid &&
-            activeUserIds.contains(employee.uid),
-      )
-      .map((employee) {
-        final location = data.locations[employee.uid];
+
+  final candidates = users
+      .where((user) {
+        final uid = user.uid.trim();
+        return uid.isNotEmpty && uid != data.driver.uid;
+      })
+      .map((user) {
+        final location = data.locations[user.uid];
         final distance = driverLocation == null || location == null
             ? null
             : LocationTrackingPolicy.distanceMeters(
@@ -210,19 +217,72 @@ Future<List<_PickupCandidate>> _loadPickupCandidates(
                 location.latitude,
                 location.longitude,
               );
+
         return _PickupCandidate(
-          employee: employee,
+          employee: user,
           location: location,
           distanceMeters: distance,
+          checkedIn: activeUserIds.contains(user.uid),
         );
       })
       .toList();
+
   candidates.sort((a, b) {
-    if (a.distanceMeters == null) return 1;
-    if (b.distanceMeters == null) return -1;
-    return a.distanceMeters!.compareTo(b.distanceMeters!);
+    if (a.checkedIn != b.checkedIn) return a.checkedIn ? -1 : 1;
+    if (a.distanceMeters == null && b.distanceMeters != null) return 1;
+    if (a.distanceMeters != null && b.distanceMeters == null) return -1;
+    if (a.distanceMeters != null && b.distanceMeters != null) {
+      return a.distanceMeters!.compareTo(b.distanceMeters!);
+    }
+    final aName = a.employee.name.trim().isEmpty
+        ? a.employee.email
+        : a.employee.name;
+    final bName = b.employee.name.trim().isEmpty
+        ? b.employee.email
+        : b.employee.name;
+    return aName.toLowerCase().compareTo(bName.toLowerCase());
   });
+
   return candidates;
+}
+
+String _pickupDistanceLabel(double? meters) {
+  if (meters == null) return '-- km';
+  if (meters >= 1000) return '${(meters / 1000).toStringAsFixed(1)} km';
+  return '${meters.round()} m';
+}
+
+String _pickupEtaLabel(double? meters) {
+  if (meters == null) return 'ETA --';
+  const cityMetersPerSecond = 8.33;
+  final minutes = (meters / cityMetersPerSecond / 60).ceil().clamp(1, 999);
+  return 'ETA $minutes min';
+}
+
+Widget _pickupKpiTile(
+  BuildContext context, {
+  required IconData icon,
+  required String label,
+  required String value,
+}) {
+  return Expanded(
+    child: Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18),
+          const SizedBox(height: 6),
+          Text(value, style: Theme.of(context).textTheme.titleMedium),
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
+        ],
+      ),
+    ),
+  );
 }
 
 /// Nothing-OS styled reason picker used before skipping a pickup. Returns
@@ -355,44 +415,44 @@ Future<bool?> _showTripSummarySheet(
                 _summaryRow(
                   context,
                   'Employees Transported',
-                  summary == null ? '—' : '${summary.completedPickups}',
+                  summary == null ? 'â€”' : '${summary.completedPickups}',
                 ),
                 _summaryRow(
                   context,
                   'Total Selected',
-                  summary == null ? '—' : '${summary.totalEmployees}',
+                  summary == null ? 'â€”' : '${summary.totalEmployees}',
                 ),
                 _summaryRow(
                   context,
                   'Skipped',
-                  summary == null ? '—' : '${summary.skipped}',
+                  summary == null ? 'â€”' : '${summary.skipped}',
                 ),
                 _summaryRow(
                   context,
                   'Distance',
                   summary == null || summary.distanceKm <= 0
-                      ? '—'
+                      ? 'â€”'
                       : '${summary.distanceKm.toStringAsFixed(1)} km',
                 ),
                 _summaryRow(
                   context,
                   'Trip Duration',
                   summary == null
-                      ? '—'
+                      ? 'â€”'
                       : _humaniseDuration(summary.tripDurationSeconds),
                 ),
                 _summaryRow(
                   context,
                   'Driving Time',
                   summary == null || summary.drivingSeconds <= 0
-                      ? '—'
+                      ? 'â€”'
                       : _humaniseDuration(summary.drivingSeconds),
                 ),
                 _summaryRow(
                   context,
                   'Waiting Time',
                   summary == null || summary.waitingSeconds <= 0
-                      ? '—'
+                      ? 'â€”'
                       : _humaniseDuration(summary.waitingSeconds),
                 ),
                 const SizedBox(height: 20),
@@ -449,161 +509,256 @@ String _humaniseDuration(int totalSeconds) {
   return '${hours}h ${minutes.toString().padLeft(2, '0')}m';
 }
 
-Future<void> _showStartTripSheet(
+Future<bool> _showStartTripSheet(
   BuildContext context,
   CabDriverOperations data,
 ) async {
+  final rootContext = context;
   final candidates = await _loadPickupCandidates(data);
-  if (!context.mounted) return;
-  if (candidates.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('No eligible employees found for pickup.')),
-    );
-    return;
-  }
+  if (!rootContext.mounted) return false;
 
   final selected = <String>{};
   var search = '';
+  var started = false;
 
   await showModalBottomSheet<void>(
     isScrollControlled: true,
-    context: context,
-    builder: (context) {
+    context: rootContext,
+    builder: (sheetContext) {
       return StatefulBuilder(
-        builder: (context, setState) {
+        builder: (sheetContext, setState) {
+          final query = search.toLowerCase().trim();
           final filtered = candidates.where((candidate) {
-            final query = search.toLowerCase();
             return query.isEmpty ||
                 candidate.employee.name.toLowerCase().contains(query) ||
                 candidate.employee.email.toLowerCase().contains(query) ||
-                candidate.employee.uid.toLowerCase().contains(query);
+                candidate.employee.uid.toLowerCase().contains(query) ||
+                candidate.employee.role.toLowerCase().contains(query) ||
+                candidate.employee.phone.toLowerCase().contains(query);
           }).toList();
+
           final allSelected =
-              filtered.isNotEmpty && selected.length == filtered.length;
-          return Padding(
-            padding: EdgeInsets.only(
-              left: 16,
-              right: 16,
-              top: 16,
-              bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Start Pickup Trip',
-                  style: Theme.of(context).textTheme.headlineSmall,
+              filtered.isNotEmpty &&
+              filtered.every((item) => selected.contains(item.employee.uid));
+          final checkedInCount = candidates
+              .where((item) => item.checkedIn)
+              .length;
+          final withLocationCount = candidates
+              .where((item) => item.location != null)
+              .length;
+
+          return SafeArea(
+            top: false,
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 16,
+                bottom: MediaQuery.of(sheetContext).viewInsets.bottom + 16,
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.sizeOf(sheetContext).height * 0.82,
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'Select employees for today\'s pickup.',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  decoration: const InputDecoration(
-                    hintText: 'Search employees',
-                    prefixIcon: Icon(Icons.search),
-                  ),
-                  onChanged: (value) => setState(() => search = value),
-                ),
-                const SizedBox(height: 8),
-                Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: filtered.isEmpty
-                            ? null
-                            : () => setState(() {
-                                if (allSelected) {
-                                  selected.clear();
+                    Text(
+                      'Start Pickup Trip',
+                      style: Theme.of(sheetContext).textTheme.headlineSmall,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'All created user IDs are visible here. Checked-in users and users with GPS appear first.',
+                      style: Theme.of(sheetContext).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        _pickupKpiTile(
+                          sheetContext,
+                          icon: Icons.groups_outlined,
+                          label: 'Users',
+                          value: '${candidates.length}',
+                        ),
+                        const SizedBox(width: 8),
+                        _pickupKpiTile(
+                          sheetContext,
+                          icon: Icons.how_to_reg_outlined,
+                          label: 'Checked In',
+                          value: '$checkedInCount',
+                        ),
+                        const SizedBox(width: 8),
+                        _pickupKpiTile(
+                          sheetContext,
+                          icon: Icons.gps_fixed_outlined,
+                          label: 'GPS Found',
+                          value: '$withLocationCount',
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      decoration: const InputDecoration(
+                        hintText: 'Search name, Gmail, mobile, role or UID',
+                        prefixIcon: Icon(Icons.search),
+                      ),
+                      onChanged: (value) => setState(() => search = value),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: filtered.isEmpty
+                                ? null
+                                : () => setState(() {
+                                    if (allSelected) {
+                                      for (final item in filtered) {
+                                        selected.remove(item.employee.uid);
+                                      }
+                                    } else {
+                                      selected.addAll(
+                                        filtered.map(
+                                          (item) => item.employee.uid,
+                                        ),
+                                      );
+                                    }
+                                  }),
+                            icon: Icon(
+                              allSelected
+                                  ? Icons.clear_all_outlined
+                                  : Icons.done_all_outlined,
+                            ),
+                            label: Text(
+                              allSelected ? 'Clear Filtered' : 'Select All',
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (filtered.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 24),
+                        child: Center(
+                          child: Text(
+                            'No user IDs found. Create/approve users first.',
+                          ),
+                        ),
+                      )
+                    else
+                      Flexible(
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: filtered.length,
+                          separatorBuilder: (_, _) => const SizedBox(height: 8),
+                          itemBuilder: (sheetContext, index) {
+                            final item = filtered[index];
+                            final title = item.employee.name.trim().isEmpty
+                                ? item.employee.email
+                                : item.employee.name;
+                            final status = item.checkedIn
+                                ? 'Checked in'
+                                : 'Not checked in';
+                            final distance = _pickupDistanceLabel(
+                              item.distanceMeters,
+                            );
+                            final eta = _pickupEtaLabel(item.distanceMeters);
+                            return CheckboxListTile(
+                              value: selected.contains(item.employee.uid),
+                              onChanged: (value) => setState(() {
+                                if (value == true) {
+                                  selected.add(item.employee.uid);
                                 } else {
-                                  selected.addAll(
-                                    filtered.map((item) => item.employee.uid),
-                                  );
+                                  selected.remove(item.employee.uid);
                                 }
                               }),
-                        child: Text(
-                          allSelected ? 'Clear Selection' : 'Select All',
+                              title: Text(title),
+                              subtitle: Text(
+                                '${item.employee.email} | ${item.employee.role} | $status | $distance | $eta',
+                              ),
+                              secondary: CircleAvatar(
+                                backgroundImage:
+                                    item.employee.profileImage.isNotEmpty
+                                    ? NetworkImage(item.employee.profileImage)
+                                    : null,
+                                child: item.employee.profileImage.isEmpty
+                                    ? Text(
+                                        title.trim().isEmpty
+                                            ? '?'
+                                            : title.trim()[0].toUpperCase(),
+                                      )
+                                    : null,
+                              ),
+                            );
+                          },
                         ),
                       ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            child: const Text('Cancel'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: FilledButton.icon(
+                            onPressed: selected.isEmpty
+                                ? null
+                                : () async {
+                                    final employeeIds = selected.toList();
+                                    try {
+                                      await CabDriverWorkflowSupport.startTripWithEmployees(
+                                        data,
+                                        employeeIds,
+                                      );
+                                      started = true;
+                                      if (sheetContext.mounted) {
+                                        Navigator.of(sheetContext).pop();
+                                      }
+                                      if (rootContext.mounted) {
+                                        ScaffoldMessenger.of(
+                                          rootContext,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text(
+                                              'Trip started with ${employeeIds.length} member(s).',
+                                            ),
+                                          ),
+                                        );
+                                      }
+                                    } catch (error) {
+                                      if (rootContext.mounted) {
+                                        ScaffoldMessenger.of(
+                                          rootContext,
+                                        ).showSnackBar(
+                                          SnackBar(content: Text('$error')),
+                                        );
+                                      }
+                                    }
+                                  },
+                            icon: const Icon(Icons.route_outlined),
+                            label: Text('Start (${selected.length})'),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-                const SizedBox(height: 12),
-                if (filtered.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24),
-                    child: Center(
-                      child: Text('No employee matches your search.'),
-                    ),
-                  )
-                else
-                  Flexible(
-                    child: ListView.builder(
-                      shrinkWrap: true,
-                      itemCount: filtered.length,
-                      itemBuilder: (context, index) {
-                        final item = filtered[index];
-                        final distanceLabel = item.distanceMeters == null
-                            ? 'Distance unknown'
-                            : '${item.distanceMeters!.round()} m';
-                        final orderLabel = item.distanceMeters == null
-                            ? 'Order: N/A'
-                            : 'Pickup order ${index + 1}';
-                        return CheckboxListTile(
-                          value: selected.contains(item.employee.uid),
-                          onChanged: (value) => setState(() {
-                            if (value == true) {
-                              selected.add(item.employee.uid);
-                            } else {
-                              selected.remove(item.employee.uid);
-                            }
-                          }),
-                          title: Text(item.employee.name),
-                          subtitle: Text(
-                            '${item.employee.uid} · ${item.employee.role} · $distanceLabel · $orderLabel',
-                          ),
-                          secondary: CircleAvatar(
-                            backgroundImage:
-                                item.employee.profileImage.isNotEmpty
-                                ? NetworkImage(item.employee.profileImage)
-                                : null,
-                            child: item.employee.profileImage.isEmpty
-                                ? const Icon(Icons.person)
-                                : null,
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton(
-                        onPressed: selected.isEmpty
-                            ? null
-                            : () async {
-                                Navigator.of(context).pop();
-                                await CabDriverWorkflowSupport.startTripWithEmployees(
-                                  data,
-                                  selected.toList(),
-                                );
-                              },
-                        child: const Text('Start Trip'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
           );
         },
       );
     },
   );
+
+  return started;
 }
 
 class _DriverHome extends StatelessWidget {
@@ -764,7 +919,7 @@ class _Actions extends StatelessWidget {
     CabDriverOperations,
   )
   onAction;
-  final Future<void> Function(BuildContext, CabDriverOperations)
+  final Future<bool> Function(BuildContext, CabDriverOperations)
   onStartTripSheet;
   final Future<void> Function(CabDriverOperations) onStartDuty;
 
@@ -817,8 +972,7 @@ class _Actions extends StatelessWidget {
             _button(
               'Reached Pickup',
               Icons.pin_drop_outlined,
-              (data.distanceToActiveRiderMeters ?? double.infinity) <=
-                  CabDriverController.arrivalThresholdMeters,
+              true,
               CabDriverController.reachedPickup,
             ),
           if (trip?.status == 'active' && rider?.status == 'waiting')
@@ -878,7 +1032,14 @@ class _Actions extends StatelessWidget {
 
   Widget _startTripButton(BuildContext context, CabDriverOperations data) {
     return FilledButton.icon(
-      onPressed: busy ? null : () => onStartTripSheet(context, data),
+      onPressed: busy
+          ? null
+          : () async {
+              final started = await onStartTripSheet(context, data);
+              if (started) {
+                await onAction((_) async {}, data);
+              }
+            },
       icon: const Icon(Icons.route_outlined),
       label: const Text('Start Trip'),
     );
@@ -969,7 +1130,7 @@ class _TripSection extends StatelessWidget {
                     leading: const Icon(Icons.route_outlined),
                     title: Text(_label(trip.status)),
                     subtitle: Text(
-                      '${trip.dateKey} • ${trip.distanceKm.toStringAsFixed(1)} km • ${_duration(Duration(seconds: trip.durationSeconds))}',
+                      '${trip.dateKey} â€¢ ${trip.distanceKm.toStringAsFixed(1)} km â€¢ ${_duration(Duration(seconds: trip.durationSeconds))}',
                     ),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: () => _tripDetails(context, trip, data),
@@ -1002,7 +1163,7 @@ class _AssignmentSection extends StatelessWidget {
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.event_outlined),
                     title: Text(item.officeName),
-                    subtitle: Text('${item.dateKey} • ${item.officeAddress}'),
+                    subtitle: Text('${item.dateKey} â€¢ ${item.officeAddress}'),
                   ),
                 )
                 .toList(),
@@ -1237,7 +1398,7 @@ Future<void> _tripDetails(
               leading: CircleAvatar(child: Text('${rider.pickupOrder}')),
               title: Text(users[rider.employeeId]?.name ?? rider.employeeId),
               subtitle: Text(
-                '${_label(rider.status)} • Waiting ${_duration(Duration(seconds: rider.waitingDurationSeconds))}',
+                '${_label(rider.status)} â€¢ Waiting ${_duration(Duration(seconds: rider.waitingDurationSeconds))}',
               ),
             ),
           ),
