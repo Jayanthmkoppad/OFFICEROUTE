@@ -63,15 +63,63 @@ class CabDriverWorkflowSupport {
     }
 
     final preferred = data.driver.vehicleNumber.trim().toLowerCase();
-    if (preferred.isEmpty) return null;
-    for (final vehicle in vehicles) {
-      if (vehicle.id.toLowerCase() == preferred ||
-          vehicle.vehicleNumber.trim().toLowerCase() == preferred ||
-          vehicle.registrationNumber.trim().toLowerCase() == preferred) {
-        return vehicle;
+    if (preferred.isNotEmpty) {
+      for (final vehicle in vehicles) {
+        if (vehicle.id.toLowerCase() == preferred ||
+            vehicle.vehicleNumber.trim().toLowerCase() == preferred ||
+            vehicle.registrationNumber.trim().toLowerCase() == preferred) {
+          return vehicle;
+        }
       }
     }
-    return null;
+
+    return _createFallbackVehicleForDriver(data);
+  }
+
+  static Future<CabVehicleModel?> _createFallbackVehicleForDriver(
+    CabDriverOperations data,
+  ) async {
+    final uid = data.driver.uid.trim();
+    if (uid.isEmpty) return null;
+
+    final profileVehicle = data.driver.vehicleNumber.trim();
+    final suffixLength = uid.length < 6 ? uid.length : 6;
+    final fallbackNumber = profileVehicle.isNotEmpty
+        ? profileVehicle
+        : 'CAB-${uid.substring(0, suffixLength).toUpperCase()}';
+
+    final draft = CabVehicleModel(
+      vehicleNumber: fallbackNumber,
+      vehicleModel: 'Office Cab',
+      registrationNumber: profileVehicle.isEmpty
+          ? fallbackNumber
+          : profileVehicle,
+      capacity: 4,
+      status: 'available',
+      driverId: uid,
+      remarks:
+          'Auto-created during driver Start Duty. Admin can update vehicle master.',
+    );
+
+    try {
+      final vehicleId = await CabManagementController.createVehicle(draft);
+      return CabVehicleModel(
+        id: vehicleId,
+        vehicleNumber: draft.vehicleNumber,
+        vehicleModel: draft.vehicleModel,
+        registrationNumber: draft.registrationNumber,
+        capacity: draft.capacity,
+        status: draft.status,
+        driverId: draft.driverId,
+        remarks: draft.remarks,
+      );
+    } catch (error) {
+      throw StateError(
+        'No cab vehicle is available and the app could not create one '
+        'automatically. Ask an administrator to create a cab_vehicles record. '
+        'Original error: ',
+      );
+    }
   }
 
   static Future<void> startDuty(
