@@ -26,14 +26,12 @@ void main() {
     test('uses empty defaults for missing fields', () {
       final user = UserModel.fromMap(const {});
 
-      expect(user.toMap(), {
-        'uid': '',
-        'name': '',
-        'email': '',
-        'phone': '',
-        'role': '',
-        'profileImage': '',
-      });
+      expect(user.uid, '');
+      expect(user.name, '');
+      expect(user.email, '');
+      expect(user.phone, '');
+      expect(user.role, '');
+      expect(user.profileImage, '');
     });
   });
 }

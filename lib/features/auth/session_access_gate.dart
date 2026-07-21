@@ -5,10 +5,13 @@ import 'package:flutter/material.dart';
 
 import '../../core/models/user_model.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/theme/app_text_styles.dart';
 import '../../core/widgets/premium_widgets.dart';
 import '../home/home_screen.dart';
 import '../manager/manager_screen.dart';
 import '../cab_driver/cab_driver_app.dart';
+import '../employee/employee_app.dart';
+import '../service_engineer/service_engineer_app.dart';
 import 'controllers/session_approval_controller.dart';
 import 'services/session_device_service.dart';
 
@@ -223,15 +226,122 @@ class _SessionAccessGateState extends State<SessionAccessGate> {
   }
 
   Widget _dashboardFor(UserModel user) {
-    final role = (user.sessionRole.isEmpty ? user.role : user.sessionRole)
-        .trim()
-        .toLowerCase()
-        .replaceAll(' ', '_');
-    if (role == 'manager') return const ManagerScreen();
-    if (role == 'cab_driver' || role == 'driver') {
-      return const CabDriverApp();
+    final target = resolveSessionRoleRouteTarget(user.role, user.sessionRole);
+
+    switch (target) {
+      case SessionRoleRouteTarget.administrator:
+        return const HomeScreen();
+      case SessionRoleRouteTarget.serviceEngineer:
+        return const ServiceEngineerApp();
+      case SessionRoleRouteTarget.manager:
+        return const ManagerScreen();
+      case SessionRoleRouteTarget.driver:
+        return const CabDriverApp();
+      case SessionRoleRouteTarget.employee:
+        return const EmployeeApp();
+      case SessionRoleRouteTarget.unsupported:
+        return _UnsupportedRoleView(
+          role: user.sessionRole.isNotEmpty ? user.sessionRole : user.role,
+        );
     }
-    return const HomeScreen();
+  }
+}
+
+enum SessionRoleRouteTarget {
+  administrator,
+  serviceEngineer,
+  manager,
+  driver,
+  employee,
+  unsupported,
+}
+
+SessionRoleRouteTarget resolveSessionRoleRouteTarget(
+  String role,
+  String sessionRole,
+) {
+  String normalize(String value) {
+    return value.trim().toLowerCase().replaceAll(' ', '_');
+  }
+
+  final roles = <String>{normalize(role), normalize(sessionRole)}..remove('');
+
+  const administratorRoles = <String>{
+    'admin',
+    'administrator',
+    'application_owner',
+    'owner',
+  };
+
+  if (roles.any(administratorRoles.contains)) {
+    return SessionRoleRouteTarget.administrator;
+  }
+
+  if (roles.contains('service_engineer') || roles.contains('field_engineer')) {
+    return SessionRoleRouteTarget.serviceEngineer;
+  }
+
+  if (roles.contains('manager')) {
+    return SessionRoleRouteTarget.manager;
+  }
+
+  if (roles.contains('cab_driver') || roles.contains('driver')) {
+    return SessionRoleRouteTarget.driver;
+  }
+
+  if (roles.contains('office_employee') || roles.contains('employee')) {
+    return SessionRoleRouteTarget.employee;
+  }
+
+  return SessionRoleRouteTarget.unsupported;
+}
+
+class _UnsupportedRoleView extends StatelessWidget {
+  final String role;
+
+  const _UnsupportedRoleView({required this.role});
+
+  @override
+  Widget build(BuildContext context) {
+    final displayRole = role.trim().isEmpty ? 'Unconfigured' : role.trim();
+    return Scaffold(
+      appBar: AppBar(title: const Text('Access Restricted')),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.admin_panel_settings_outlined,
+                size: 64,
+                color: AppColors.warning,
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Access role is not configured',
+                style: AppTextStyles.headingSmall,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Role: "$displayRole"\n\nPlease contact your OfficeRoute administrator to configure appropriate application access.',
+                style: AppTextStyles.caption,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  await FirebaseAuth.instance.signOut();
+                },
+                icon: const Icon(Icons.logout),
+                label: const Text('Sign Out'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
