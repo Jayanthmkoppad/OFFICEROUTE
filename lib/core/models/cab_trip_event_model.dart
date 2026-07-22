@@ -39,7 +39,10 @@ class CabTripEventModel {
   });
 
   /// Creates an event model from a Firestore document map.
-  factory CabTripEventModel.fromMap(Map<String, dynamic> map, {String id = ''}) {
+  factory CabTripEventModel.fromMap(
+    Map<String, dynamic> map, {
+    String id = '',
+  }) {
     return CabTripEventModel(
       id: id.isNotEmpty ? id : (map['id'] ?? '').toString(),
       tripId: (map['tripId'] ?? '').toString(),

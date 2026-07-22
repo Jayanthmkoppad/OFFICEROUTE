@@ -31,10 +31,16 @@ class CabTripRiderModel {
   final int pickupOrder;
   final int pickupDelaySeconds;
 
-  /// Pickup latitude captured when the employee becomes ready.
+  /// Snapshot of assigned pickup location name.
+  final String pickupName;
+
+  /// Snapshot of assigned pickup address.
+  final String pickupAddress;
+
+  /// Pickup latitude captured when the employee becomes ready or assigned.
   final double? pickupLatitude;
 
-  /// Pickup longitude captured when the employee becomes ready.
+  /// Pickup longitude captured when the employee becomes ready or assigned.
   final double? pickupLongitude;
 
   /// Creation timestamp.
@@ -58,6 +64,8 @@ class CabTripRiderModel {
     this.waitingDurationSeconds = 0,
     this.pickupOrder = 0,
     this.pickupDelaySeconds = 0,
+    this.pickupName = '',
+    this.pickupAddress = '',
     this.pickupLatitude,
     this.pickupLongitude,
     this.createdAt,
@@ -83,6 +91,8 @@ class CabTripRiderModel {
       waitingDurationSeconds: _parseInt(map['waitingDurationSeconds']),
       pickupOrder: _parseInt(map['pickupOrder']),
       pickupDelaySeconds: _parseInt(map['pickupDelaySeconds']),
+      pickupName: (map['pickupName'] ?? '').toString(),
+      pickupAddress: (map['pickupAddress'] ?? '').toString(),
       pickupLatitude: _parseNullableDouble(map['pickupLatitude']),
       pickupLongitude: _parseNullableDouble(map['pickupLongitude']),
       createdAt: _parseDateTime(map['createdAt']),
@@ -107,6 +117,8 @@ class CabTripRiderModel {
       'waitingDurationSeconds': waitingDurationSeconds,
       'pickupOrder': pickupOrder,
       'pickupDelaySeconds': pickupDelaySeconds,
+      'pickupName': pickupName,
+      'pickupAddress': pickupAddress,
       'pickupLatitude': pickupLatitude,
       'pickupLongitude': pickupLongitude,
       'createdAt': createdAt == null ? null : Timestamp.fromDate(createdAt!),
@@ -129,6 +141,8 @@ class CabTripRiderModel {
     int? waitingDurationSeconds,
     int? pickupOrder,
     int? pickupDelaySeconds,
+    String? pickupName,
+    String? pickupAddress,
     double? pickupLatitude,
     double? pickupLongitude,
     DateTime? createdAt,
@@ -149,6 +163,8 @@ class CabTripRiderModel {
           waitingDurationSeconds ?? this.waitingDurationSeconds,
       pickupOrder: pickupOrder ?? this.pickupOrder,
       pickupDelaySeconds: pickupDelaySeconds ?? this.pickupDelaySeconds,
+      pickupName: pickupName ?? this.pickupName,
+      pickupAddress: pickupAddress ?? this.pickupAddress,
       pickupLatitude: pickupLatitude ?? this.pickupLatitude,
       pickupLongitude: pickupLongitude ?? this.pickupLongitude,
       createdAt: createdAt ?? this.createdAt,

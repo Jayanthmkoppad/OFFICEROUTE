@@ -30,6 +30,18 @@ class CabAssignmentMemberModel {
   /// Member status, for example `assigned`, `ready`, or `boarded`.
   final String status;
 
+  /// Snapshot of assigned pickup location name.
+  final String pickupName;
+
+  /// Snapshot of assigned pickup address.
+  final String pickupAddress;
+
+  /// Snapshot of assigned pickup latitude.
+  final double? pickupLatitude;
+
+  /// Snapshot of assigned pickup longitude.
+  final double? pickupLongitude;
+
   /// Creation timestamp.
   final DateTime? createdAt;
 
@@ -46,6 +58,10 @@ class CabAssignmentMemberModel {
     this.driverId = '',
     this.vehicleId = '',
     this.status = 'assigned',
+    this.pickupName = '',
+    this.pickupAddress = '',
+    this.pickupLatitude,
+    this.pickupLongitude,
     this.createdAt,
     this.updatedAt,
   });
@@ -64,6 +80,10 @@ class CabAssignmentMemberModel {
       driverId: (map['driverId'] ?? '').toString(),
       vehicleId: (map['vehicleId'] ?? '').toString(),
       status: (map['status'] ?? 'assigned').toString(),
+      pickupName: (map['pickupName'] ?? '').toString(),
+      pickupAddress: (map['pickupAddress'] ?? '').toString(),
+      pickupLatitude: _parseNullableDouble(map['pickupLatitude']),
+      pickupLongitude: _parseNullableDouble(map['pickupLongitude']),
       createdAt: _parseDateTime(map['createdAt']),
       updatedAt: _parseDateTime(map['updatedAt']),
     );
@@ -79,6 +99,10 @@ class CabAssignmentMemberModel {
       'driverId': driverId,
       'vehicleId': vehicleId,
       'status': status,
+      'pickupName': pickupName,
+      'pickupAddress': pickupAddress,
+      'pickupLatitude': pickupLatitude,
+      'pickupLongitude': pickupLongitude,
       'createdAt': createdAt == null ? null : Timestamp.fromDate(createdAt!),
       'updatedAt': updatedAt == null ? null : Timestamp.fromDate(updatedAt!),
     };
@@ -94,6 +118,10 @@ class CabAssignmentMemberModel {
     String? driverId,
     String? vehicleId,
     String? status,
+    String? pickupName,
+    String? pickupAddress,
+    double? pickupLatitude,
+    double? pickupLongitude,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -106,8 +134,12 @@ class CabAssignmentMemberModel {
       driverId: driverId ?? this.driverId,
       vehicleId: vehicleId ?? this.vehicleId,
       status: status ?? this.status,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
+      pickupName: pickupName ?? this.pickupName,
+      pickupAddress: pickupAddress ?? this.pickupAddress,
+      pickupLatitude: pickupLatitude ?? this.pickupLatitude,
+      pickupLongitude: pickupLongitude ?? this.pickupLongitude,
+      createdAt: createdAt is DateTime ? createdAt : this.createdAt,
+      updatedAt: updatedAt is DateTime ? updatedAt : this.updatedAt,
     );
   }
 
@@ -118,6 +150,13 @@ class CabAssignmentMemberModel {
     if (value is String && value.trim().isNotEmpty) {
       return DateTime.tryParse(value);
     }
+    return null;
+  }
+
+  static double? _parseNullableDouble(Object? value) {
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value);
     return null;
   }
 }
