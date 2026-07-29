@@ -2,14 +2,17 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:officeroute/core/models/cab_assignment_member_model.dart';
+import 'package:officeroute/core/models/cab_assignment_model.dart';
 import 'package:officeroute/core/models/cab_trip_model.dart';
 import 'package:officeroute/core/models/cab_trip_rider_model.dart';
 import 'package:officeroute/core/models/live_location_model.dart';
 import 'package:officeroute/core/models/location_permission_state_model.dart';
 import 'package:officeroute/core/models/location_session_model.dart';
 import 'package:officeroute/core/models/passenger_progress_model.dart';
+import 'package:officeroute/core/models/user_model.dart';
 import 'package:officeroute/core/services/passenger_progress_service.dart';
 import 'package:officeroute/features/employee/controllers/employee_transport_controller.dart';
+import 'package:officeroute/features/attendance/models/attendance_model.dart';
 
 LocationSessionModel _createTestSession({
   String id = 'session_1',
@@ -41,12 +44,14 @@ LiveLocationModel _createTestLiveLocation({
   String status = 'active',
   double? speed,
   DateTime? updatedAt,
+  String assignmentId = '',
 }) {
   final now = updatedAt ?? DateTime(2026, 7, 22, 10, 0, 0);
   return LiveLocationModel(
     userId: userId,
     sessionId: 'session_1',
     trackingReason: 'cab_pickup_ready',
+    assignmentId: assignmentId,
     status: status,
     latitude: latitude,
     longitude: longitude,
@@ -151,15 +156,16 @@ void main() {
           checkedAt: DateTime.now(),
         ),
         activeSessionLoader: (userId) async => activeSession,
-        sessionStarter: ({required userId, required trackingReason}) async {
-          sessionStarted = true;
-          return _createTestSession(
-            id: 'session_1',
-            userId: userId,
-            trackingReason: trackingReason,
-            status: 'active',
-          );
-        },
+        sessionStarter:
+            ({required userId, required trackingReason, metadata}) async {
+              sessionStarted = true;
+              return _createTestSession(
+                id: 'session_1',
+                userId: userId,
+                trackingReason: trackingReason,
+                status: 'active',
+              );
+            },
         sessionStopper: ({required session, required stopReason}) async {
           if (stopSessionShouldFail) {
             throw StateError('Backend stop session error');
@@ -390,8 +396,9 @@ void main() {
           checkedAt: DateTime.now(),
         ),
         activeSessionLoader: (userId) async => null,
-        sessionStarter: ({required userId, required trackingReason}) async =>
-            _createTestSession(),
+        sessionStarter:
+            ({required userId, required trackingReason, metadata}) async =>
+                _createTestSession(),
         sessionStopper: ({required session, required stopReason}) async =>
             session,
         foregroundTrackingStarter:
@@ -447,8 +454,9 @@ void main() {
             checkedAt: DateTime.now(),
           ),
           activeSessionLoader: (userId) async => null,
-          sessionStarter: ({required userId, required trackingReason}) async =>
-              _createTestSession(),
+          sessionStarter:
+              ({required userId, required trackingReason, metadata}) async =>
+                  _createTestSession(),
           sessionStopper: ({required session, required stopReason}) async =>
               session,
           foregroundTrackingStarter:
@@ -522,8 +530,9 @@ void main() {
             checkedAt: DateTime.now(),
           ),
           activeSessionLoader: (userId) async => null,
-          sessionStarter: ({required userId, required trackingReason}) async =>
-              _createTestSession(),
+          sessionStarter:
+              ({required userId, required trackingReason, metadata}) async =>
+                  _createTestSession(),
           sessionStopper: ({required session, required stopReason}) async =>
               session,
           foregroundTrackingStarter:
@@ -881,6 +890,232 @@ void main() {
         final res = await controller.startDuty();
         expect(res.isAccepted, isFalse);
         expect(controller.isActionLoading, isFalse);
+      },
+    );
+  });
+
+  group('Employee current-day lifecycle', () {
+    test('same-day refresh is idempotent and keeps the active date', () async {
+      var now = DateTime(2026, 7, 23, 10);
+      var refreshCount = 0;
+      final controller = EmployeeTransportController(
+        initListeners: false,
+        clock: () => now,
+        currentDayRefreshCallback: (_) async => refreshCount++,
+      );
+
+      final result = await controller.refreshCurrentDay();
+
+      expect(result.isAccepted, isTrue);
+      expect(controller.activeDateKey, '2026-07-23');
+      expect(refreshCount, 1);
+      controller.dispose();
+    });
+
+    test('midnight rollover resets presentation and loads new date', () async {
+      var now = DateTime(2026, 7, 23, 23, 59);
+      String? refreshedDate;
+      final controller = EmployeeTransportController(
+        initListeners: false,
+        clock: () => now,
+        currentDayRefreshCallback: (dateKey) async => refreshedDate = dateKey,
+      );
+      controller.todayAttendance = AttendanceModel(
+        id: 'attendance_1',
+        userId: 'emp_123',
+        status: 'Checked In',
+        date: now,
+        checkInTime: now,
+        checkOutTime: null,
+        breakStartTime: null,
+        totalBreakMinutes: 0,
+        checkInLatitude: null,
+        checkInLongitude: null,
+        checkOutLatitude: null,
+        checkOutLongitude: null,
+        locationValidationStatus: 'valid',
+        syncStatus: 'synced',
+      );
+      controller.myAssignmentMember = const CabAssignmentMemberModel(
+        assignmentId: 'today',
+        dateKey: '2026-07-23',
+        userId: 'emp_123',
+      );
+
+      now = DateTime(2026, 7, 24);
+      await controller.handleClockTick();
+
+      expect(controller.activeDateKey, '2026-07-24');
+      expect(controller.todayAttendance, isNull);
+      expect(controller.myAssignmentMember, isNull);
+      expect(refreshedDate, '2026-07-24');
+      controller.dispose();
+    });
+
+    test('active trip is preserved across midnight', () async {
+      var now = DateTime(2026, 7, 23, 23, 59);
+      final controller = EmployeeTransportController(
+        initListeners: false,
+        clock: () => now,
+      );
+      controller.activeTrip = const CabTripModel(
+        id: 'trip_1',
+        assignmentId: 'assignment_1',
+        status: 'active',
+      );
+
+      now = DateTime(2026, 7, 24);
+      await controller.handleClockTick();
+
+      expect(controller.activeDateKey, '2026-07-23');
+      expect(controller.activeTrip?.id, 'trip_1');
+      controller.dispose();
+    });
+
+    test('strict today selector rejects historical and empty date keys', () {
+      const historical = CabAssignmentMemberModel(
+        assignmentId: 'old',
+        dateKey: '2026-07-22',
+      );
+      const empty = CabAssignmentMemberModel(
+        assignmentId: 'legacy',
+        dateKey: '',
+      );
+
+      expect(
+        EmployeeTransportController.selectTodayAssignmentMember(const [
+          historical,
+          empty,
+        ], '2026-07-23'),
+        isNull,
+      );
+      expect(
+        EmployeeTransportController.selectTodayAssignmentMember(const [
+          historical,
+        ], ''),
+        isNull,
+      );
+    });
+
+    test('actual assigned Driver name is displayed when loaded', () {
+      final controller = EmployeeTransportController(initListeners: false);
+      controller.activeAssignment = const CabAssignmentModel(
+        id: 'assignment_1',
+        driverId: 'driver_1',
+      );
+      controller.assignedDriver = const UserModel(
+        uid: 'driver_1',
+        name: 'Ravi Kumar',
+        email: 'ravi@example.com',
+        phone: '',
+        role: 'Cab Driver',
+        profileImage: '',
+      );
+
+      expect(controller.driverDisplayName, 'Ravi Kumar');
+      controller.dispose();
+    });
+
+    test('Home view state orders progress and calculates live counts', () {
+      final controller = EmployeeTransportController(initListeners: false);
+      controller.passengerProgressList = [
+        PassengerProgressModel(
+          employeeId: 'third',
+          passengerDisplayName: 'Third',
+          pickupSequence: 3,
+          status: 'travelling_to_pickup',
+          locationFreshness: 'live',
+        ),
+        PassengerProgressModel(
+          employeeId: 'first',
+          passengerDisplayName: 'First',
+          pickupSequence: 1,
+          status: 'boarded',
+          locationFreshness: 'live',
+        ),
+        PassengerProgressModel(
+          employeeId: 'second',
+          passengerDisplayName: 'Second',
+          pickupSequence: 2,
+          status: 'ready',
+          locationFreshness: 'live',
+        ),
+      ];
+
+      final state = controller.homeViewState;
+
+      expect(state.orderedProgress.map((item) => item.employeeId), [
+        'first',
+        'second',
+        'third',
+      ]);
+      expect(state.activeEmployees, 3);
+      expect(state.readyEmployees, 1);
+      expect(state.onboardEmployees, 1);
+      expect(state.remainingEmployees, 2);
+      expect(state.currentPickup?.employeeId, 'second');
+      expect(state.nextPickup?.employeeId, 'third');
+      controller.dispose();
+    });
+
+    test('Driver location requires matching Driver and assignment IDs', () {
+      final matching = _createTestLiveLocation(
+        userId: 'driver_1',
+        latitude: 28.61,
+        longitude: 77.20,
+        assignmentId: 'assignment_1',
+      );
+
+      expect(
+        EmployeeTransportController.isAuthorizedDriverLocation(
+          location: matching,
+          driverId: 'driver_1',
+          assignmentId: 'assignment_1',
+        ),
+        isTrue,
+      );
+      expect(
+        EmployeeTransportController.isAuthorizedDriverLocation(
+          location: matching,
+          driverId: 'driver_1',
+          assignmentId: 'other_assignment',
+        ),
+        isFalse,
+      );
+      expect(
+        EmployeeTransportController.isAuthorizedDriverLocation(
+          location: matching,
+          driverId: 'other_driver',
+          assignmentId: 'assignment_1',
+        ),
+        isFalse,
+      );
+    });
+
+    test(
+      'Administrator and Manager identities remain transport participants',
+      () {
+        for (final role in ['Administrator', 'Manager']) {
+          final controller = EmployeeTransportController(initListeners: false);
+          controller.currentUser = UserModel(
+            uid: 'user_$role',
+            name: role,
+            email: '$role@example.com',
+            phone: '',
+            role: role,
+            profileImage: '',
+          );
+          controller.myAssignmentMember = CabAssignmentMemberModel(
+            assignmentId: 'assignment_1',
+            dateKey: controller.activeDateKey,
+            userId: controller.currentUser!.uid,
+            pickupLatitude: 28.61,
+            pickupLongitude: 77.20,
+          );
+
+          expect(controller.myAssignmentMember, isNotNull);
+          controller.dispose();
+        }
       },
     );
   });

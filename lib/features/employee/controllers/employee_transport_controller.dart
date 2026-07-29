@@ -8,15 +8,19 @@ import '../../../core/models/cab_assignment_member_model.dart';
 import '../../../core/models/cab_assignment_model.dart';
 import '../../../core/models/cab_trip_model.dart';
 import '../../../core/models/cab_trip_rider_model.dart';
+import '../../../core/models/cab_vehicle_model.dart';
 import '../../../core/models/live_location_model.dart';
 import '../../../core/models/location_permission_state_model.dart';
 import '../../../core/models/location_session_model.dart';
 import '../../../core/models/passenger_progress_model.dart';
+import '../../../core/models/shared_map_presence_model.dart';
 import '../../../core/models/user_model.dart';
 import '../../../core/services/cab_assignment_service.dart';
 import '../../../core/services/cab_trip_service.dart';
+import '../../../core/services/firestore_service.dart';
 import '../../../core/services/location_tracking_policy.dart';
 import '../../../core/services/passenger_progress_service.dart';
+import '../../../core/services/shared_map_presence_service.dart';
 import '../../attendance/controllers/attendance_controller.dart';
 import '../../attendance/models/attendance_model.dart';
 import '../../map/controllers/location_controller.dart';
@@ -32,6 +36,14 @@ typedef PassengerProgressStreamFactory =
     Stream<List<PassengerProgressModel>> Function(String tripId);
 typedef DriverLocationStreamFactory =
     Stream<LiveLocationModel?> Function(String driverId);
+typedef UserStreamFactory = Stream<UserModel?> Function(String userId);
+typedef VehicleStreamFactory =
+    Stream<CabVehicleModel?> Function(String vehicleId);
+typedef CurrentDayRefreshCallback = Future<void> Function(String dateKey);
+typedef PassengerRemarkUpdater =
+    Future<void> Function(String tripId, String employeeId, String remark);
+typedef RosterIdentityLoader =
+    Future<List<UserModel>> Function(List<String> userIds);
 
 /// Employee action result containing acceptance state and a user-friendly message.
 class EmployeeActionResult {
@@ -52,6 +64,31 @@ class GeofenceResult {
     required this.distanceMeters,
     required this.message,
   });
+}
+
+@immutable
+class EmployeeHomeViewState {
+  const EmployeeHomeViewState({
+    required this.stateCode,
+    required this.diagnosticCode,
+    required this.activeEmployees,
+    required this.readyEmployees,
+    required this.onboardEmployees,
+    required this.remainingEmployees,
+    required this.orderedProgress,
+    this.currentPickup,
+    this.nextPickup,
+  });
+
+  final String stateCode;
+  final String diagnosticCode;
+  final int activeEmployees;
+  final int readyEmployees;
+  final int onboardEmployees;
+  final int remainingEmployees;
+  final List<PassengerProgressModel> orderedProgress;
+  final PassengerProgressModel? currentPickup;
+  final PassengerProgressModel? nextPickup;
 }
 
 /// Native Flutter InheritedNotifier scope for EmployeeTransportController.
@@ -81,6 +118,8 @@ class EmployeeTransportController extends ChangeNotifier {
   CabTripRiderModel? myRiderRecord;
   LiveLocationModel? driverLiveLocation;
   LiveLocationModel? employeeLiveLocation;
+  UserModel? assignedDriver;
+  CabVehicleModel? assignedVehicle;
 
   /// Retained active cab pickup location session
   LocationSessionModel? activeSession;
@@ -93,6 +132,13 @@ class EmployeeTransportController extends ChangeNotifier {
 
   /// Privacy-safe passenger progress list read from `cab_trips/{tripId}/passenger_progress/{employeeId}`.
   List<PassengerProgressModel> passengerProgressList = [];
+  List<SharedMapPresenceModel> sharedMapPresence = [];
+  List<PassengerProgressModel> _configuredRoster = [];
+  List<PassengerProgressModel> _tripProgress = [];
+  List<String> _configuredRosterIds = [];
+  Map<String, UserModel> _rosterUsersById = {};
+  String _presenceDiagnosticCode = 'ok';
+  String rosterDiagnosticCode = 'ok';
 
   /// Explicit decoupled state indicators
   String attendanceActionState = 'none'; // 'none', 'started', 'failed'
@@ -103,10 +149,13 @@ class EmployeeTransportController extends ChangeNotifier {
 
   bool isLoading = true;
   bool isActionLoading = false;
+  bool isRefreshing = false;
   String? errorMessage;
   String? locationStopError;
   String? passengerProgressSyncError;
   String locationPermissionStatus = 'Unknown';
+  LocationPermissionStateModel? locationPermissionState;
+  Position? currentDevicePosition;
 
   // Generation token for stream sync safety
   int _generationToken = 0;
@@ -128,8 +177,11 @@ class EmployeeTransportController extends ChangeNotifier {
   StreamSubscription? _riderSubscription;
   StreamSubscription? _passengerProgressSubscription;
   StreamSubscription? _driverLocationSubscription;
+  StreamSubscription? _driverUserSubscription;
+  StreamSubscription? _vehicleSubscription;
   StreamSubscription? _employeeLocationSubscription;
   StreamSubscription? _foregroundTrackingSubscription;
+  StreamSubscription? _sharedPresenceSubscription;
 
   final FirebaseAuth? auth;
   final FirebaseFirestore? firestore;
@@ -145,6 +197,7 @@ class EmployeeTransportController extends ChangeNotifier {
   final Future<LocationSessionModel> Function({
     required String userId,
     required String trackingReason,
+    Map<String, dynamic>? metadata,
   })?
   sessionStarter;
   final Future<LocationSessionModel> Function({
@@ -177,6 +230,9 @@ class EmployeeTransportController extends ChangeNotifier {
   progressWriter;
   final Future<Position> Function()? currentPositionGetter;
   final DateTime Function()? clock;
+  final CurrentDayRefreshCallback? currentDayRefreshCallback;
+  final PassengerRemarkUpdater? passengerRemarkUpdater;
+  final RosterIdentityLoader? rosterIdentityLoader;
 
   // Injected Stream Factories
   final AssignmentStreamFactory? assignmentStreamFactory;
@@ -184,6 +240,15 @@ class EmployeeTransportController extends ChangeNotifier {
   final RiderStreamFactory? riderStreamFactory;
   final PassengerProgressStreamFactory? passengerProgressStreamFactory;
   final DriverLocationStreamFactory? driverLocationStreamFactory;
+  final UserStreamFactory? userStreamFactory;
+  final VehicleStreamFactory? vehicleStreamFactory;
+  final bool _realtimeListenersEnabled;
+
+  String _activeDateKey = '';
+  Timer? _minuteTimer;
+
+  String get activeDateKey => _activeDateKey;
+  DateTime get currentTime => clock?.call() ?? DateTime.now();
 
   FirebaseAuth get _authObj => auth ?? FirebaseAuth.instance;
   FirebaseFirestore get _dbObj => firestore ?? FirebaseFirestore.instance;
@@ -205,19 +270,28 @@ class EmployeeTransportController extends ChangeNotifier {
     this.progressWriter,
     this.currentPositionGetter,
     this.clock,
+    this.currentDayRefreshCallback,
+    this.passengerRemarkUpdater,
+    this.rosterIdentityLoader,
     this.assignmentStreamFactory,
     this.tripStreamFactory,
     this.riderStreamFactory,
     this.passengerProgressStreamFactory,
     this.driverLocationStreamFactory,
+    this.userStreamFactory,
+    this.vehicleStreamFactory,
     bool initListeners = true,
-  }) {
+  }) : _realtimeListenersEnabled = initListeners {
     if (initListeners) {
       _initRealtimeListeners();
       updateLocationPermissionStatus();
+      _minuteTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+        unawaited(handleClockTick());
+      });
     } else {
       isLoading = false;
     }
+    _activeDateKey = _todayDateKey();
   }
 
   void _safeNotifyListeners() {
@@ -231,14 +305,180 @@ class EmployeeTransportController extends ChangeNotifier {
       final checker =
           permissionChecker ?? LocationController.checkLocationPermission;
       final status = await checker();
+      locationPermissionState = status;
       locationPermissionStatus = status.canUseLocation ? 'Granted' : 'Denied';
       _safeNotifyListeners();
     } catch (_) {
+      locationPermissionState = null;
       locationPermissionStatus = 'Denied';
+      _safeNotifyListeners();
     }
   }
 
-  void _initRealtimeListeners() async {
+  String get locationServiceStatus {
+    final state = locationPermissionState;
+    if (state == null) return 'Checking';
+    return state.serviceEnabled ? 'GPS on' : 'GPS off';
+  }
+
+  Future<EmployeeActionResult> refreshDeviceLocation() async {
+    await updateLocationPermissionStatus();
+    final state = locationPermissionState;
+    if (state == null) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Could not check location settings.',
+      );
+    }
+    if (!state.serviceEnabled) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'GPS is off. Enable Location Services and retry.',
+      );
+    }
+    if (!state.canUseLocation) {
+      final requester =
+          permissionRequester ?? LocationController.requestLocationPermission;
+      locationPermissionState = await requester();
+      locationPermissionStatus = locationPermissionState!.canUseLocation
+          ? 'Granted'
+          : 'Denied';
+      if (!locationPermissionState!.canUseLocation) {
+        _safeNotifyListeners();
+        return const EmployeeActionResult(
+          isAccepted: false,
+          message: 'Location permission is not granted.',
+        );
+      }
+    }
+    try {
+      final getter =
+          currentPositionGetter ??
+          () => Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.high,
+            ),
+          );
+      currentDevicePosition = await getter();
+      _safeNotifyListeners();
+      return const EmployeeActionResult(
+        isAccepted: true,
+        message: 'Current location updated.',
+      );
+    } catch (_) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Could not read the current device location.',
+      );
+    }
+  }
+
+  bool get isSharingMapPresence {
+    final uid = currentUser?.uid;
+    return uid != null &&
+        sharedMapPresence.any(
+          (item) => item.userId == uid && item.status == 'active',
+        );
+  }
+
+  Future<EmployeeActionResult> shareCurrentMapPresence() async {
+    final locationResult = await refreshDeviceLocation();
+    if (!locationResult.isAccepted || currentDevicePosition == null) {
+      return locationResult;
+    }
+    final uid = currentUidGetter?.call() ?? _authObj.currentUser?.uid;
+    if (uid == null || uid.isEmpty) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Employee is not authenticated.',
+      );
+    }
+    try {
+      final location = LiveLocationModel.fromPosition(
+        userId: uid,
+        sessionId: 'manual_map_presence',
+        trackingReason: LocationTrackingPolicy.reasonFieldDuty,
+        status: LocationTrackingPolicy.statusActive,
+        position: currentDevicePosition!,
+        isForeground: true,
+      );
+      await SharedMapPresenceService.publish(location);
+      return const EmployeeActionResult(
+        isAccepted: true,
+        message: 'Your location is now visible on the organization map.',
+      );
+    } catch (_) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Could not share your map location.',
+      );
+    }
+  }
+
+  Future<EmployeeActionResult> stopCurrentMapPresence() async {
+    final uid = currentUidGetter?.call() ?? _authObj.currentUser?.uid;
+    if (uid == null || uid.isEmpty) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Employee is not authenticated.',
+      );
+    }
+    try {
+      await SharedMapPresenceService.markOffline(uid);
+      return const EmployeeActionResult(
+        isAccepted: true,
+        message: 'Organization map sharing stopped.',
+      );
+    } catch (_) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Could not stop map sharing.',
+      );
+    }
+  }
+
+  Future<void> openLocationSettings() => Geolocator.openLocationSettings();
+
+  Future<void> openAppSettings() => Geolocator.openAppSettings();
+
+  Future<EmployeeActionResult> saveTravelLocations({
+    required String homeAddress,
+    required double homeLatitude,
+    required double homeLongitude,
+    required String pickupAddress,
+    required double pickupLatitude,
+    required double pickupLongitude,
+  }) async {
+    final uid = currentUidGetter?.call() ?? _authObj.currentUser?.uid;
+    if (uid == null || uid.isEmpty) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Employee is not authenticated.',
+      );
+    }
+    try {
+      await _dbObj.collection('users').doc(uid).update({
+        'homeAddress': homeAddress.trim(),
+        'homeLatitude': homeLatitude,
+        'homeLongitude': homeLongitude,
+        'preferredPickupAddress': pickupAddress.trim(),
+        'preferredPickupLatitude': pickupLatitude,
+        'preferredPickupLongitude': pickupLongitude,
+      });
+      return const EmployeeActionResult(
+        isAccepted: true,
+        message:
+            'Travel locations saved. Today\'s assigned pickup remains administrator-controlled.',
+      );
+    } catch (_) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Could not save travel locations.',
+      );
+    }
+  }
+
+  Future<void> _initRealtimeListeners() async {
     final uid = currentUidGetter?.call() ?? _authObj.currentUser?.uid;
     if (uid == null || uid.isEmpty) {
       isLoading = false;
@@ -248,9 +488,25 @@ class EmployeeTransportController extends ChangeNotifier {
     }
 
     final dateKey = _todayDateKey();
+    _activeDateKey = dateKey;
     final nowTime = clock?.call() ?? DateTime.now();
 
     await _cancelAllSubscriptions();
+    _sharedPresenceSubscription = SharedMapPresenceService.watchActivePresence()
+        .listen(
+          (items) {
+            _presenceDiagnosticCode = 'ok';
+            sharedMapPresence = items;
+            _refreshConfiguredRosterProjection();
+            _safeNotifyListeners();
+          },
+          onError: (Object error) {
+            _presenceDiagnosticCode = _rosterErrorCode(error);
+            sharedMapPresence = [];
+            _refreshConfiguredRosterProjection();
+            _safeNotifyListeners();
+          },
+        );
 
     // 1. User document stream
     _userSubscription = _dbObj
@@ -261,10 +517,14 @@ class EmployeeTransportController extends ChangeNotifier {
           (snap) {
             if (snap.exists && snap.data() != null) {
               currentUser = UserModel.fromMap(snap.data()!);
+              if (currentUser!.uid.isNotEmpty) {
+                _rosterUsersById[currentUser!.uid] = currentUser!;
+              }
               errorMessage = null;
             } else {
               currentUser = null;
             }
+            _refreshConfiguredRosterProjection();
             _safeNotifyListeners();
           },
           onError: (Object err) {
@@ -294,6 +554,7 @@ class EmployeeTransportController extends ChangeNotifier {
               attendanceActionState = 'none';
             }
             errorMessage = null;
+            _refreshConfiguredRosterProjection();
             _safeNotifyListeners();
           },
           onError: (Object err) {
@@ -307,19 +568,17 @@ class EmployeeTransportController extends ChangeNotifier {
     _memberSubscription = _dbObj
         .collection('cab_assignment_members')
         .where('userId', isEqualTo: uid)
+        .where('dateKey', isEqualTo: dateKey)
         .snapshots()
         .listen(
           (querySnap) async {
             QueryDocumentSnapshot<Map<String, dynamic>>? targetDoc;
             for (final doc in querySnap.docs) {
               final dk = doc.data()['dateKey'];
-              if (dk == dateKey || dk == null || dk == '') {
+              if (dk == dateKey) {
                 targetDoc = doc;
                 break;
               }
-            }
-            if (targetDoc == null && querySnap.docs.isNotEmpty) {
-              targetDoc = querySnap.docs.first;
             }
 
             if (targetDoc != null && targetDoc.data().isNotEmpty) {
@@ -329,6 +588,7 @@ class EmployeeTransportController extends ChangeNotifier {
               );
               final oldAssignmentId = myAssignmentMember?.assignmentId;
               myAssignmentMember = newMember;
+              _refreshConfiguredRosterProjection();
               final newAssignmentId = newMember.assignmentId;
 
               if (newAssignmentId.isNotEmpty) {
@@ -389,7 +649,14 @@ class EmployeeTransportController extends ChangeNotifier {
     activeTrip = null;
     myRiderRecord = null;
     driverLiveLocation = null;
+    assignedDriver = null;
+    assignedVehicle = null;
     passengerProgressList = [];
+    _configuredRoster = [];
+    _tripProgress = [];
+    _configuredRosterIds = [];
+    _rosterUsersById = {};
+    rosterDiagnosticCode = 'ok';
   }
 
   Future<void> _handleAssignmentChange(
@@ -407,6 +674,10 @@ class EmployeeTransportController extends ChangeNotifier {
     _tripSubscription = null;
     await _cancelSubscription(_driverLocationSubscription);
     _driverLocationSubscription = null;
+    await _cancelSubscription(_driverUserSubscription);
+    _driverUserSubscription = null;
+    await _cancelSubscription(_vehicleSubscription);
+    _vehicleSubscription = null;
     await _cancelSubscription(_riderSubscription);
     _riderSubscription = null;
     await _cancelSubscription(_passengerProgressSubscription);
@@ -487,15 +758,21 @@ class EmployeeTransportController extends ChangeNotifier {
         if (assignment != null) {
           final oldDriverId = activeAssignment?.driverId;
           activeAssignment = assignment;
+          await _loadConfiguredRoster(assignment, currentToken);
+          _listenToVehicle(activeAssignment!.vehicleId, currentToken);
 
           if (activeAssignment!.driverId.isNotEmpty) {
             if (oldDriverId != activeAssignment!.driverId) {
               _listenToDriverLocation(activeAssignment!.driverId, currentToken);
+              _listenToDriverUser(activeAssignment!.driverId, currentToken);
             }
           } else {
             await _cancelSubscription(_driverLocationSubscription);
             _driverLocationSubscription = null;
             driverLiveLocation = null;
+            await _cancelSubscription(_driverUserSubscription);
+            _driverUserSubscription = null;
+            assignedDriver = null;
           }
           errorMessage = null;
         } else {
@@ -528,11 +805,16 @@ class EmployeeTransportController extends ChangeNotifier {
         if (currentToken != _generationToken) return;
         final validTrips = trips
             .where(
-              (t) => const <String>{
-                'created',
-                'active',
-                'office_arrived',
-              }.contains(t.status),
+              (trip) =>
+                  const <String>{
+                    'created',
+                    'active',
+                    'office_arrived',
+                  }.contains(trip.status) &&
+                  trip.assignmentId == assignmentId &&
+                  trip.dateKey == _activeDateKey &&
+                  trip.driverId == activeAssignment?.driverId &&
+                  trip.vehicleId == activeAssignment?.vehicleId,
             )
             .toList();
 
@@ -562,7 +844,8 @@ class EmployeeTransportController extends ChangeNotifier {
           }
           activeTrip = null;
           myRiderRecord = null;
-          passengerProgressList = [];
+          _tripProgress = [];
+          _rebuildRoster();
           await _cancelSubscription(_riderSubscription);
           _riderSubscription = null;
           await _cancelSubscription(_passengerProgressSubscription);
@@ -585,6 +868,10 @@ class EmployeeTransportController extends ChangeNotifier {
   void _listenToDriverLocation(String driverId, int token) async {
     await _cancelSubscription(_driverLocationSubscription);
     _driverLocationSubscription = null;
+    await _cancelSubscription(_driverUserSubscription);
+    _driverUserSubscription = null;
+    await _cancelSubscription(_vehicleSubscription);
+    _vehicleSubscription = null;
     driverLiveLocation = null;
 
     final driverStream = driverLocationStreamFactory != null
@@ -602,7 +889,13 @@ class EmployeeTransportController extends ChangeNotifier {
     _driverLocationSubscription = driverStream.listen(
       (location) {
         if (token != _generationToken) return;
-        driverLiveLocation = location;
+        final assignmentId = activeAssignment?.id ?? '';
+        final isAuthorized = isAuthorizedDriverLocation(
+          location: location,
+          driverId: driverId,
+          assignmentId: assignmentId,
+        );
+        driverLiveLocation = isAuthorized ? location : null;
         errorMessage = null;
         _safeNotifyListeners();
       },
@@ -611,6 +904,62 @@ class EmployeeTransportController extends ChangeNotifier {
         debugPrint('Driver location error: $err');
         errorMessage = 'Could not update driver location.';
         _safeNotifyListeners();
+      },
+    );
+  }
+
+  void _listenToDriverUser(String driverId, int token) async {
+    await _cancelSubscription(_driverUserSubscription);
+    if (token != _generationToken) return;
+    final stream = userStreamFactory != null
+        ? userStreamFactory!(driverId)
+        : _dbObj
+              .collection('users')
+              .doc(driverId)
+              .snapshots()
+              .map(
+                (snap) => snap.exists && snap.data() != null
+                    ? UserModel.fromMap(snap.data()!)
+                    : null,
+              );
+    _driverUserSubscription = stream.listen(
+      (driver) {
+        if (token != _generationToken) return;
+        assignedDriver = driver;
+        _safeNotifyListeners();
+      },
+      onError: (Object error) {
+        debugPrint('Driver user stream error: $error');
+      },
+    );
+  }
+
+  void _listenToVehicle(String vehicleId, int token) async {
+    await _cancelSubscription(_vehicleSubscription);
+    assignedVehicle = null;
+    if (vehicleId.isEmpty || token != _generationToken) {
+      _safeNotifyListeners();
+      return;
+    }
+    final stream = vehicleStreamFactory != null
+        ? vehicleStreamFactory!(vehicleId)
+        : _dbObj
+              .collection('cab_vehicles')
+              .doc(vehicleId)
+              .snapshots()
+              .map(
+                (snap) => snap.exists && snap.data() != null
+                    ? CabVehicleModel.fromMap(snap.data()!, id: snap.id)
+                    : null,
+              );
+    _vehicleSubscription = stream.listen(
+      (vehicle) {
+        if (token != _generationToken) return;
+        assignedVehicle = vehicle;
+        _safeNotifyListeners();
+      },
+      onError: (Object error) {
+        debugPrint('Vehicle stream error: $error');
       },
     );
   }
@@ -676,7 +1025,8 @@ class EmployeeTransportController extends ChangeNotifier {
     _passengerProgressSubscription = progStream.listen(
       (list) {
         if (token != _generationToken) return;
-        passengerProgressList = list;
+        _tripProgress = list;
+        _rebuildRoster();
         _safeNotifyListeners();
       },
       onError: (Object err) {
@@ -708,6 +1058,11 @@ class EmployeeTransportController extends ChangeNotifier {
     activeTrip = null;
     myRiderRecord = null;
     passengerProgressList = [];
+    _configuredRoster = [];
+    _tripProgress = [];
+    _configuredRosterIds = [];
+    _rosterUsersById = {};
+    rosterDiagnosticCode = 'ok';
     driverLiveLocation = null;
 
     final stopSuccess = await _stopLocationTrackingSession(
@@ -718,6 +1073,200 @@ class EmployeeTransportController extends ChangeNotifier {
     } else {
       transportTrackingState = 'inactive';
     }
+  }
+
+  Future<void> _loadConfiguredRoster(
+    CabAssignmentModel assignment,
+    int token,
+  ) async {
+    final ids = <String>{
+      ...assignment.employeeIds.where(
+        (id) => id.trim().isNotEmpty && id != assignment.driverId,
+      ),
+      if (myAssignmentMember?.assignmentId == assignment.id &&
+          myAssignmentMember?.userId.trim().isNotEmpty == true &&
+          myAssignmentMember?.userId != assignment.driverId)
+        myAssignmentMember!.userId,
+    }.toList(growable: false);
+    _configuredRosterIds = ids;
+    _rosterUsersById = {
+      if (currentUser?.uid.isNotEmpty == true) currentUser!.uid: currentUser!,
+    };
+    if (ids.isEmpty) {
+      rosterDiagnosticCode = 'no_configured_members';
+      _configuredRoster = [];
+      _rebuildRoster();
+      return;
+    }
+    rosterDiagnosticCode = 'loading';
+    _refreshConfiguredRosterProjection();
+    try {
+      final loader = rosterIdentityLoader ?? FirestoreService.fetchUsersByIds;
+      final users = await loader(ids);
+      if (token != _generationToken) return;
+      _rosterUsersById.addAll({
+        for (final user in users)
+          if (user.uid.isNotEmpty) user.uid: user,
+      });
+      rosterDiagnosticCode = 'ok';
+      _refreshConfiguredRosterProjection();
+    } catch (error) {
+      debugPrint('Configured transport roster load failed: $error');
+      if (token != _generationToken) return;
+      rosterDiagnosticCode = _rosterErrorCode(error);
+      _refreshConfiguredRosterProjection();
+    }
+  }
+
+  void _refreshConfiguredRosterProjection() {
+    if (_configuredRosterIds.isEmpty) {
+      _rebuildRoster();
+      return;
+    }
+    _configuredRoster = [
+      for (var index = 0; index < _configuredRosterIds.length; index++)
+        _configuredPassenger(
+          employeeId: _configuredRosterIds[index],
+          user: _rosterUsersById[_configuredRosterIds[index]],
+          pickupSequence: index + 1,
+        ),
+    ];
+    _rebuildRoster();
+  }
+
+  static String _rosterErrorCode(Object error) {
+    if (error is FirebaseException) {
+      if (error.code == 'permission-denied') return 'permission_denied';
+      if (error.code == 'unavailable' || error.code == 'deadline-exceeded') {
+        return 'offline';
+      }
+    }
+    return 'query_failed';
+  }
+
+  PassengerProgressModel _configuredPassenger({
+    required String employeeId,
+    required int pickupSequence,
+    UserModel? user,
+  }) {
+    final presence = sharedMapPresence
+        .where((item) => item.userId == employeeId)
+        .firstOrNull;
+    final isMe = employeeId == currentUser?.uid;
+    final attendanceActive = isMe && todayAttendance?.isCheckedIn == true;
+    final ownPermissionDenied =
+        isMe &&
+        (locationPermissionStatus == 'Denied' ||
+            locationPermissionState?.canUseForegroundLocation == false);
+    final freshness = ownPermissionDenied
+        ? 'permission_denied'
+        : presence == null
+        ? _presenceDiagnosticCode == 'permission_denied'
+              ? 'permission_denied'
+              : _presenceDiagnosticCode == 'offline' || attendanceActive
+              ? 'offline'
+              : 'not_started'
+        : currentTime.difference(presence.updatedAt).inMinutes >= 2
+        ? 'stale'
+        : presence.status == 'active'
+        ? 'live'
+        : 'offline';
+    final role = (user?.role ?? presence?.role ?? 'employee')
+        .trim()
+        .toLowerCase();
+    final roleLabel =
+        const {
+          'admin',
+          'administrator',
+          'application_owner',
+          'owner',
+        }.contains(role)
+        ? 'Administrator'
+        : role == 'manager'
+        ? 'Manager'
+        : 'Employee';
+    final memberStatus = isMe ? myAssignmentMember?.status : null;
+    final configuredStatus = switch (memberStatus) {
+      'travelling_to_pickup' => 'on_the_way',
+      'ready' => 'ready',
+      'not_coming' => 'not_coming',
+      'running_late' => 'running_late',
+      _ => attendanceActive || presence != null ? 'waiting' : 'not_started',
+    };
+    return PassengerProgressModel(
+      employeeId: employeeId,
+      passengerDisplayName: user?.name.trim().isNotEmpty == true
+          ? user!.name
+          : presence?.displayName.trim().isNotEmpty == true
+          ? presence!.displayName
+          : 'Route member',
+      employeeCode: user?.employeeCode ?? '',
+      roleLabel: roleLabel,
+      pickupSequence: pickupSequence,
+      status: configuredStatus,
+      attendanceActive: attendanceActive || presence != null,
+      transportActive: true,
+      locationFreshness: freshness,
+      updatedAt: presence?.updatedAt,
+    );
+  }
+
+  void _rebuildRoster() {
+    passengerProgressList = mergeTransportRoster(
+      configured: _configuredRoster,
+      progress: _tripProgress,
+    );
+  }
+
+  bool get canUpdateOwnTransportStatus =>
+      activeTrip != null &&
+      currentUser?.uid.isNotEmpty == true &&
+      passengerProgressList.any(
+        (item) => item.employeeId == currentUser!.uid && item.transportActive,
+      );
+
+  @visibleForTesting
+  static List<PassengerProgressModel> mergeTransportRoster({
+    required List<PassengerProgressModel> configured,
+    required List<PassengerProgressModel> progress,
+  }) {
+    final byId = <String, PassengerProgressModel>{
+      for (final item in configured) item.employeeId: item,
+    };
+    for (final update in progress) {
+      final base = byId[update.employeeId];
+      byId[update.employeeId] = base == null
+          ? update
+          : PassengerProgressModel(
+              employeeId: base.employeeId,
+              passengerDisplayName: update.passengerDisplayName == 'Passenger'
+                  ? base.passengerDisplayName
+                  : update.passengerDisplayName,
+              employeeCode: update.employeeCode.isEmpty
+                  ? base.employeeCode
+                  : update.employeeCode,
+              roleLabel: update.roleLabel == 'Employee'
+                  ? base.roleLabel
+                  : update.roleLabel,
+              pickupSequence: update.pickupSequence > 0
+                  ? update.pickupSequence
+                  : base.pickupSequence,
+              status: update.status,
+              remark: update.remark,
+              attendanceActive:
+                  update.attendanceActive || base.attendanceActive,
+              transportActive: update.transportActive,
+              distanceToPickupMeters: update.distanceToPickupMeters,
+              estimatedReadyMinutes: update.estimatedReadyMinutes,
+              locationFreshness: update.locationFreshness == 'unknown'
+                  ? base.locationFreshness
+                  : update.locationFreshness,
+              updatedAt: update.updatedAt ?? base.updatedAt,
+            );
+    }
+    final result = byId.values.toList()
+      ..sort((a, b) => a.pickupSequence.compareTo(b.pickupSequence));
+    return result;
   }
 
   Future<bool> _stopLocationTrackingSession({
@@ -808,6 +1357,8 @@ class EmployeeTransportController extends ChangeNotifier {
     _employeeLocationSubscription = null;
     await _cancelSubscription(_foregroundTrackingSubscription);
     _foregroundTrackingSubscription = null;
+    await _cancelSubscription(_sharedPresenceSubscription);
+    _sharedPresenceSubscription = null;
 
     if (transportTrackingState != 'stop_failed') {
       transportTrackingState = 'inactive';
@@ -816,6 +1367,9 @@ class EmployeeTransportController extends ChangeNotifier {
 
   /// Pure connection/location status resolver.
   String get connectionStatus {
+    if (locationPermissionState?.serviceEnabled == false) {
+      return 'GPS OFF';
+    }
     if (locationPermissionStatus == 'Denied') {
       return 'LOCATION OFF';
     }
@@ -940,7 +1494,137 @@ class EmployeeTransportController extends ChangeNotifier {
     if (activeAssignment == null || activeAssignment!.driverId.isEmpty) {
       return 'Not assigned';
     }
-    return 'Driver assigned';
+    final name = assignedDriver?.name.trim() ?? '';
+    return name.isEmpty ? 'Driver details loading' : name;
+  }
+
+  String get employeeLocationFreshness =>
+      formatFreshness(employeeLiveLocation?.updatedAt, now: currentTime);
+
+  String get driverLocationFreshness =>
+      formatFreshness(driverLiveLocation?.updatedAt, now: currentTime);
+
+  String get dutyDurationDisplay {
+    final checkIn = todayAttendance?.checkInTime;
+    if (checkIn == null) return '—';
+    final end = todayAttendance?.checkOutTime ?? currentTime;
+    final duration = end.difference(checkIn);
+    if (duration.isNegative) return '—';
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    return hours == 0 ? '${minutes}m' : '${hours}h ${minutes}m';
+  }
+
+  Future<EmployeeActionResult> refreshCurrentDay() async {
+    if (isRefreshing) {
+      return const EmployeeActionResult(
+        isAccepted: true,
+        message: 'Status refresh already in progress.',
+      );
+    }
+    isRefreshing = true;
+    _safeNotifyListeners();
+    try {
+      final newDateKey = _todayDateKey();
+      if (newDateKey != _activeDateKey) {
+        final switched = await _rolloverToDate(newDateKey);
+        if (!switched) {
+          return const EmployeeActionResult(
+            isAccepted: true,
+            message:
+                'Active trip retained until location sharing stops safely.',
+          );
+        }
+      } else {
+        await currentDayRefreshCallback?.call(newDateKey);
+        await updateLocationPermissionStatus();
+      }
+      errorMessage = null;
+      return const EmployeeActionResult(
+        isAccepted: true,
+        message: 'Today’s status is up to date.',
+      );
+    } catch (error) {
+      debugPrint('Current-day refresh error: $error');
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message:
+            'Could not refresh status. Check your connection and try again.',
+      );
+    } finally {
+      isRefreshing = false;
+      _safeNotifyListeners();
+    }
+  }
+
+  Future<void> handleClockTick() async {
+    if (_isDisposed) return;
+    final newDateKey = _todayDateKey();
+    if (newDateKey != _activeDateKey) {
+      await _rolloverToDate(newDateKey);
+    } else {
+      _safeNotifyListeners();
+    }
+  }
+
+  Future<bool> _rolloverToDate(String newDateKey) async {
+    final tripIsActive =
+        activeTrip != null &&
+        const {
+          'created',
+          'active',
+          'office_arrived',
+        }.contains(activeTrip!.status);
+    if (tripIsActive) {
+      _safeNotifyListeners();
+      return false;
+    }
+    if (activeSession != null) {
+      final stopped = await _stopLocationTrackingSession(
+        stopReason: 'daily_rollover',
+      );
+      if (!stopped) {
+        transportTrackingState = 'stop_failed';
+        _safeNotifyListeners();
+        return false;
+      }
+    }
+    _activeDateKey = newDateKey;
+    todayAttendance = null;
+    myAssignmentMember = null;
+    _clearDownstreamState();
+    isLoading = true;
+    await currentDayRefreshCallback?.call(newDateKey);
+    if (_realtimeListenersEnabled) {
+      await _initRealtimeListeners();
+    } else {
+      isLoading = false;
+      _safeNotifyListeners();
+    }
+    return true;
+  }
+
+  static CabAssignmentMemberModel? selectTodayAssignmentMember(
+    Iterable<CabAssignmentMemberModel> members,
+    String dateKey,
+  ) {
+    if (dateKey.trim().isEmpty) return null;
+    for (final member in members) {
+      if (member.dateKey == dateKey) return member;
+    }
+    return null;
+  }
+
+  static bool isAuthorizedDriverLocation({
+    required LiveLocationModel? location,
+    required String driverId,
+    required String assignmentId,
+  }) {
+    return location != null &&
+        driverId.isNotEmpty &&
+        assignmentId.isNotEmpty &&
+        location.userId == driverId &&
+        location.assignmentId == assignmentId;
   }
 
   /// Pure static geofence validator using the 100m/150m accuracy rule.
@@ -1045,6 +1729,7 @@ class EmployeeTransportController extends ChangeNotifier {
         session = await starter(
           userId: uid,
           trackingReason: LocationTrackingPolicy.reasonCabPickupReady,
+          metadata: <String, dynamic>{'assignmentId': member.assignmentId},
         );
         createdSessionDuringAction = true;
         sessionCreatedDuringAction = session;
@@ -1257,8 +1942,12 @@ class EmployeeTransportController extends ChangeNotifier {
         PassengerProgressModel(
           employeeId: uid,
           passengerDisplayName: displayName,
+          employeeCode: currentUser?.employeeCode ?? '',
+          roleLabel: _passengerRoleLabel,
           pickupSequence: sequence,
           status: currentStatus,
+          attendanceActive: todayAttendance != null,
+          transportActive: currentStatus != 'not_coming',
           distanceToPickupMeters: employeeDistanceToPickupMeters,
           locationFreshness: 'live',
           updatedAt: nowTime,
@@ -1274,6 +1963,88 @@ class EmployeeTransportController extends ChangeNotifier {
       rethrow;
     } finally {
       _isProgressWriting = false;
+    }
+  }
+
+  String get _passengerRoleLabel {
+    final role = currentUser?.role.trim().toLowerCase() ?? '';
+    return const {
+          'admin',
+          'administrator',
+          'application_owner',
+          'owner',
+        }.contains(role)
+        ? 'Administrator'
+        : role == 'manager'
+        ? 'Manager'
+        : 'Employee';
+  }
+
+  Future<EmployeeActionResult> updateOwnTransportRemark(String remark) async {
+    if (isActionLoading) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'A transport update is already in progress.',
+      );
+    }
+    if (!PassengerProgressService.employeeRemarks.contains(remark)) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'This transport status is not supported.',
+      );
+    }
+    if (remark == 'ready') {
+      final result = await markReadyAtPickup();
+      return EmployeeActionResult(
+        isAccepted: result.isAccepted,
+        message: result.message,
+      );
+    }
+    final trip = activeTrip;
+    final uid = currentUidGetter?.call() ?? _authObj.currentUser?.uid;
+    if (trip == null || uid == null || uid.isEmpty) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'No active trip is available.',
+      );
+    }
+
+    isActionLoading = true;
+    errorMessage = null;
+    _safeNotifyListeners();
+    final previous = List<PassengerProgressModel>.from(passengerProgressList);
+    final index = passengerProgressList.indexWhere(
+      (item) => item.employeeId == uid,
+    );
+    if (index >= 0) {
+      passengerProgressList[index] = passengerProgressList[index].copyWith(
+        status: remark,
+        remark: remark,
+        transportActive: remark != 'not_coming',
+        updatedAt: currentTime,
+      );
+      _safeNotifyListeners();
+    }
+    try {
+      final updater =
+          passengerRemarkUpdater ?? PassengerProgressService.updateOwnRemark;
+      await updater(trip.id, uid, remark);
+      return EmployeeActionResult(
+        isAccepted: true,
+        message: remark == 'not_coming'
+            ? 'Transport marked Not coming. Attendance is unchanged.'
+            : 'Transport status updated.',
+      );
+    } catch (_) {
+      passengerProgressList = previous;
+      errorMessage = 'Could not update transport status.';
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Could not update transport status. Please try again.',
+      );
+    } finally {
+      isActionLoading = false;
+      _safeNotifyListeners();
     }
   }
 
@@ -1451,8 +2222,12 @@ class EmployeeTransportController extends ChangeNotifier {
             PassengerProgressModel(
               employeeId: uid,
               passengerDisplayName: displayName,
+              employeeCode: currentUser?.employeeCode ?? '',
+              roleLabel: _passengerRoleLabel,
               pickupSequence: myRiderRecord?.pickupOrder ?? 0,
               status: 'ready',
+              remark: 'ready',
+              attendanceActive: todayAttendance != null,
               distanceToPickupMeters: dist,
               locationFreshness: 'live',
               updatedAt: nowTime,
@@ -1623,7 +2398,11 @@ class EmployeeTransportController extends ChangeNotifier {
     final riderStatus = myRiderRecord?.status;
     if (riderStatus == 'completed' || riderStatus == 'dropped') return 'J';
     if (riderStatus == 'picked_up' || riderStatus == 'boarded') return 'I';
-    if (riderStatus == 'arrived') return 'H';
+    if (riderStatus == 'arrived' ||
+        riderStatus == 'waiting' ||
+        riderStatus == 'driver_waiting') {
+      return 'H';
+    }
 
     // G: Employee ready
     if (member.status == 'ready') return 'G';
@@ -1645,6 +2424,87 @@ class EmployeeTransportController extends ChangeNotifier {
     return 'D';
   }
 
+  EmployeeHomeViewState get homeViewState {
+    final progress =
+        passengerProgressList
+            .where((item) => item.employeeId.isNotEmpty)
+            .toList(growable: false)
+          ..sort((a, b) => a.pickupSequence.compareTo(b.pickupSequence));
+    const terminal = {
+      'picked_up',
+      'boarded',
+      'completed',
+      'dropped',
+      'skipped',
+      'no_show',
+    };
+    const onboard = {'picked_up', 'boarded', 'completed', 'dropped'};
+    final assignedCount = activeAssignment?.employeeIds.length ?? 0;
+    final activeCount = assignedCount > progress.length
+        ? assignedCount
+        : progress.length;
+    final completedCount = progress
+        .where((item) => terminal.contains(item.status))
+        .length;
+    PassengerProgressModel? current;
+    PassengerProgressModel? next;
+    for (final item in progress) {
+      if (terminal.contains(item.status)) continue;
+      if (current == null) {
+        current = item;
+      } else {
+        next = item;
+        break;
+      }
+    }
+
+    String diagnostic = 'ok';
+    if (locationPermissionState?.serviceEnabled == false) {
+      diagnostic = 'location_services_disabled';
+    } else if (locationPermissionStatus == 'Denied' ||
+        locationPermissionState?.canUseForegroundLocation == false) {
+      diagnostic = 'permission_denied';
+    } else if (errorMessage != null) {
+      final lower = errorMessage!.toLowerCase();
+      diagnostic = lower.contains('permission') || lower.contains('denied')
+          ? 'permission_denied'
+          : lower.contains('offline') || lower.contains('network')
+          ? 'offline'
+          : 'query_failed';
+    } else if (todayAttendance != null && myAssignmentMember == null) {
+      diagnostic = 'no_today_operation';
+    } else if (myAssignmentMember != null &&
+        (myAssignmentMember!.pickupLatitude == null ||
+            myAssignmentMember!.pickupLongitude == null)) {
+      diagnostic = 'pickup_missing';
+    } else if (activeAssignment != null &&
+        (activeAssignment!.officeLatitude == null ||
+            activeAssignment!.officeLongitude == null)) {
+      diagnostic = 'office_missing';
+    } else if (activeAssignment != null && activeAssignment!.driverId.isEmpty) {
+      diagnostic = 'driver_pending';
+    } else if (activeAssignment != null &&
+        activeAssignment!.vehicleId.isEmpty) {
+      diagnostic = 'vehicle_pending';
+    }
+
+    return EmployeeHomeViewState(
+      stateCode: homeState,
+      diagnosticCode: diagnostic,
+      activeEmployees: activeCount,
+      readyEmployees: progress.where((item) => item.status == 'ready').length,
+      onboardEmployees: progress
+          .where((item) => onboard.contains(item.status))
+          .length,
+      remainingEmployees: activeCount > completedCount
+          ? activeCount - completedCount
+          : 0,
+      orderedProgress: List.unmodifiable(progress),
+      currentPickup: current,
+      nextPickup: next,
+    );
+  }
+
   /// Returns a human-readable freshness string from an optional timestamp.
   static String formatFreshness(DateTime? updatedAt, {DateTime? now}) {
     if (updatedAt == null) return 'Offline';
@@ -1656,149 +2516,6 @@ class EmployeeTransportController extends ChangeNotifier {
     if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
     if (diff.inHours < 24) return '${diff.inHours} hr ago';
     return 'Stale';
-  }
-
-  /// Creates an active test cab assignment in Firestore for the current employee
-  /// so the live transport features (Start Duty, Ready, Live Map, Driver, Metrics)
-  /// can be tested live on real devices without waiting for an Admin UI.
-  Future<void> setupTestAssignmentForTesting() async {
-    isActionLoading = true;
-    _safeNotifyListeners();
-
-    try {
-      final uid = currentUidGetter?.call() ?? _authObj.currentUser?.uid;
-      if (uid == null || uid.isEmpty) return;
-
-      final dateKey = _todayDateKey();
-      final assignmentId = 'assign_demo_$uid';
-      final tripId = 'trip_demo_$uid';
-      final driverId = 'driver_demo_101';
-
-      double pickupLat = 15.3647;
-      double pickupLng = 75.1240;
-      try {
-        if (currentPositionGetter != null) {
-          final pos = await currentPositionGetter!();
-          pickupLat = pos.latitude;
-          pickupLng = pos.longitude;
-        } else {
-          final loc = await LocationController.getCurrentLocation();
-          pickupLat = loc.latitude;
-          pickupLng = loc.longitude;
-        }
-      } catch (_) {}
-
-      final officeLat = pickupLat + 0.0050;
-      final officeLng = pickupLng + 0.0050;
-      final cabLat = pickupLat - 0.0020;
-      final cabLng = pickupLng - 0.0020;
-
-      final memberMap = <String, dynamic>{
-        'id': '${dateKey}_$uid',
-        'assignmentId': assignmentId,
-        'dateKey': dateKey,
-        'userId': uid,
-        'role': 'employee',
-        'driverId': driverId,
-        'vehicleId': 'KA-25-CAB-8899',
-        'status': 'assigned',
-        'pickupName': 'Central Bus Station Pickup',
-        'pickupAddress': 'Main Station Road, Hubli',
-        'pickupLatitude': pickupLat,
-        'pickupLongitude': pickupLng,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      await _dbObj
-          .collection('cab_assignment_members')
-          .doc('${dateKey}_$uid')
-          .set(memberMap, SetOptions(merge: true));
-
-      final assignmentMap = <String, dynamic>{
-        'id': assignmentId,
-        'dateKey': dateKey,
-        'driverId': driverId,
-        'vehicleId': 'KA-25-CAB-8899',
-        'employeeIds': [uid],
-        'officeName': 'Hubli Tech Park HQ',
-        'officeAddress': 'Airport Road, Hubli',
-        'officeLatitude': officeLat,
-        'officeLongitude': officeLng,
-        'status': 'active',
-        'assignedBy': 'System Admin',
-        'assignedAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      await _dbObj
-          .collection('cab_assignments')
-          .doc(assignmentId)
-          .set(assignmentMap, SetOptions(merge: true));
-
-      final tripMap = <String, dynamic>{
-        'id': tripId,
-        'assignmentId': assignmentId,
-        'driverId': driverId,
-        'status': 'active',
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      await _dbObj
-          .collection('cab_trips')
-          .doc(tripId)
-          .set(tripMap, SetOptions(merge: true));
-
-      final driverLocationMap = <String, dynamic>{
-        'userId': driverId,
-        'sessionId': 'session_driver_demo',
-        'trackingReason': 'driver_active_trip',
-        'status': 'active',
-        'latitude': cabLat,
-        'longitude': cabLng,
-        'accuracy': 8.0,
-        'speed': 32.5,
-        'heading': 45.0,
-        'isForeground': true,
-        'source': 'gps',
-        'syncStatus': 'synced',
-        'recordedAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-
-      await _dbObj
-          .collection('live_locations')
-          .doc(driverId)
-          .set(driverLocationMap, SetOptions(merge: true));
-    } catch (e) {
-      debugPrint('setupTestAssignmentForTesting error: $e');
-    } finally {
-      isActionLoading = false;
-      _safeNotifyListeners();
-    }
-  }
-
-  /// Removes the test cab assignment documents from Firestore for this employee.
-  Future<void> clearTestAssignmentForTesting() async {
-    isActionLoading = true;
-    _safeNotifyListeners();
-
-    try {
-      final uid = currentUidGetter?.call() ?? _authObj.currentUser?.uid;
-      if (uid == null || uid.isEmpty) return;
-
-      final dateKey = _todayDateKey();
-      await _dbObj
-          .collection('cab_assignment_members')
-          .doc('${dateKey}_$uid')
-          .delete();
-    } catch (e) {
-      debugPrint('clearTestAssignmentForTesting error: $e');
-    } finally {
-      isActionLoading = false;
-      _safeNotifyListeners();
-    }
   }
 
   /// Returns a contextual offline/error explanation for the Home screen.
@@ -1871,6 +2588,8 @@ class EmployeeTransportController extends ChangeNotifier {
   @override
   void dispose() {
     _isDisposed = true;
+    _minuteTimer?.cancel();
+    _minuteTimer = null;
     _cancelSubscriptionQuietly(_userSubscription);
     _userSubscription = null;
     _cancelSubscriptionQuietly(_attendanceSubscription);
@@ -1887,10 +2606,16 @@ class EmployeeTransportController extends ChangeNotifier {
     _passengerProgressSubscription = null;
     _cancelSubscriptionQuietly(_driverLocationSubscription);
     _driverLocationSubscription = null;
+    _cancelSubscriptionQuietly(_driverUserSubscription);
+    _driverUserSubscription = null;
+    _cancelSubscriptionQuietly(_vehicleSubscription);
+    _vehicleSubscription = null;
     _cancelSubscriptionQuietly(_employeeLocationSubscription);
     _employeeLocationSubscription = null;
     _cancelSubscriptionQuietly(_foregroundTrackingSubscription);
     _foregroundTrackingSubscription = null;
+    _cancelSubscriptionQuietly(_sharedPresenceSubscription);
+    _sharedPresenceSubscription = null;
     super.dispose();
   }
 

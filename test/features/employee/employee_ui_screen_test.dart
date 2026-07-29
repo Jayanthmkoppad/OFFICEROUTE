@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:officeroute/core/models/cab_assignment_member_model.dart';
 import 'package:officeroute/core/models/cab_assignment_model.dart';
+import 'package:officeroute/core/models/passenger_progress_model.dart';
 import 'package:officeroute/core/models/user_model.dart';
 import 'package:officeroute/features/attendance/models/attendance_model.dart';
 import 'package:officeroute/features/employee/controllers/employee_transport_controller.dart';
 import 'package:officeroute/features/employee/employee_home_screen.dart';
+import 'package:officeroute/features/employee/employee_map_screen.dart';
 import 'package:officeroute/features/employee/employee_profile_screen.dart';
 
 /// Creates a minimal controller with specified state for widget testing.
@@ -18,6 +20,9 @@ EmployeeTransportController _createTestController({
   String transportSyncState = 'synced',
   String? errorMessage,
   String? locationStopError,
+  Future<void> Function(String dateKey)? currentDayRefreshCallback,
+  DateTime Function()? clock,
+  bool isLoading = false,
 }) {
   final controller = EmployeeTransportController(
     initListeners: false,
@@ -27,8 +32,9 @@ EmployeeTransportController _createTestController({
     permissionChecker: () async => throw UnimplementedError(),
     permissionRequester: () async => throw UnimplementedError(),
     activeSessionLoader: (_) async => null,
-    sessionStarter: ({required userId, required trackingReason}) async =>
-        throw UnimplementedError(),
+    sessionStarter:
+        ({required userId, required trackingReason, metadata}) async =>
+            throw UnimplementedError(),
     sessionStopper: ({required session, required stopReason}) async =>
         throw UnimplementedError(),
     foregroundTrackingStarter:
@@ -39,7 +45,8 @@ EmployeeTransportController _createTestController({
         ({required tripId, required riderId, required fields}) async {},
     progressWriter: (tripId, progress, {isEmployeeRole = true}) async {},
     currentPositionGetter: () async => throw UnimplementedError(),
-    clock: () => DateTime(2026, 7, 22, 10, 0, 0),
+    clock: clock ?? () => DateTime(2026, 7, 22, 10, 0, 0),
+    currentDayRefreshCallback: currentDayRefreshCallback,
   );
 
   controller.currentUser =
@@ -59,7 +66,7 @@ EmployeeTransportController _createTestController({
   controller.transportSyncState = transportSyncState;
   controller.errorMessage = errorMessage;
   controller.locationStopError = locationStopError;
-  controller.isLoading = false;
+  controller.isLoading = isLoading;
 
   return controller;
 }
@@ -94,8 +101,10 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('Employee Home Screen Widget Tests', () {
-    // 1. No-route Home shows one clean route card
-    testWidgets('1. No-route Home shows one clean route card', (tester) async {
+    // 1. No-route Home keeps the verified hero and roster visible.
+    testWidgets('1. No-route Home shows truthful hero and roster', (
+      tester,
+    ) async {
       final controller = _createTestController(
         attendance: _checkedInAttendance(),
       );
@@ -105,12 +114,16 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      // Should find the no-route card
-      expect(find.text('No route assigned for today'), findsOneWidget);
-      expect(
-        find.text('Your Administrator has not assigned a cab route for today.'),
-        findsOneWidget,
+      expect(find.text('Route not configured'), findsOneWidget);
+      expect(find.byKey(const Key('employee_transport_hero')), findsOneWidget);
+      await tester.dragUntilVisible(
+        find.text("TODAY'S EMPLOYEES"),
+        find.byType(CustomScrollView),
+        const Offset(0, -300),
       );
+      expect(find.text("TODAY'S EMPLOYEES"), findsOneWidget);
+      expect(find.text('No active route for today.'), findsOneWidget);
+      expect(find.textContaining('Setup Test Route'), findsNothing);
     });
 
     // 2. No-route Home hides distance cards
@@ -174,7 +187,7 @@ void main() {
       expect(find.text('Pickup point not configured'), findsOneWidget);
       expect(
         find.text(
-          'Your permanent pickup location must be configured by an Administrator.',
+          'Ask an Administrator to configure your permanent pickup location.',
         ),
         findsOneWidget,
       );
@@ -231,9 +244,247 @@ void main() {
       expect(find.byKey(const Key('retry_stop_button')), findsOneWidget);
       expect(find.text('Retry Stop'), findsOneWidget);
     });
+
+    testWidgets('8. initial loading does not show Start Duty', (tester) async {
+      final controller = _createTestController(isLoading: true);
+      await tester.pumpWidget(
+        _testApp(EmployeeHomeScreen(onNavigateToMap: () {}), controller),
+      );
+
+      expect(find.byKey(const Key('employee_home_loading')), findsOneWidget);
+      expect(find.byKey(const Key('start_duty_button')), findsNothing);
+    });
+
+    testWidgets('9. header shows injected greeting and identity', (
+      tester,
+    ) async {
+      final controller = _createTestController(
+        clock: () => DateTime(2026, 7, 23, 20, 7),
+      );
+      await tester.pumpWidget(
+        _testApp(EmployeeHomeScreen(onNavigateToMap: () {}), controller),
+      );
+
+      expect(find.text('OfficeRoute'), findsOneWidget);
+      expect(find.text('EMP CODE: Unavailable'), findsOneWidget);
+      expect(find.text('Good evening, Test Employee'), findsOneWidget);
+    });
+
+    testWidgets('10. refresh is working and demo control is absent', (
+      tester,
+    ) async {
+      var refreshCount = 0;
+      final controller = _createTestController(
+        attendance: _checkedInAttendance(),
+        currentDayRefreshCallback: (_) async => refreshCount++,
+      );
+      await tester.pumpWidget(
+        _testApp(EmployeeHomeScreen(onNavigateToMap: () {}), controller),
+      );
+
+      expect(find.textContaining('Setup Test Route'), findsNothing);
+      await tester.ensureVisible(
+        find.byKey(const Key('refresh_status_button')),
+      );
+      await tester.tap(find.byKey(const Key('refresh_status_button')));
+      await tester.pumpAndSettle();
+      expect(refreshCount, 1);
+      expect(find.text('Today’s status is up to date.'), findsOneWidget);
+    });
+
+    testWidgets('11. no-route state keeps one refresh action', (tester) async {
+      final controller = _createTestController(
+        attendance: _checkedInAttendance(),
+      );
+      await tester.pumpWidget(
+        _testApp(EmployeeHomeScreen(onNavigateToMap: () {}), controller),
+      );
+      expect(
+        find.byKey(const Key('contact_administrator_button')),
+        findsNothing,
+      );
+      expect(find.byKey(const Key('refresh_status_button')), findsOneWidget);
+    });
+
+    testWidgets('12. Track Cab opens Map through supplied callback', (
+      tester,
+    ) async {
+      var openedMap = false;
+      final controller = _createTestController(
+        attendance: _checkedInAttendance(),
+        member: const CabAssignmentMemberModel(
+          id: 'mem_1',
+          assignmentId: 'assign_1',
+          dateKey: '2026-07-22',
+          userId: 'test_uid',
+          pickupName: 'Office Gate',
+          pickupAddress: '123 Main St',
+          pickupLatitude: 28.6139,
+          pickupLongitude: 77.2090,
+        ),
+        assignment: const CabAssignmentModel(
+          id: 'assign_1',
+          dateKey: '2026-07-22',
+          driverId: 'driver_1',
+          vehicleId: 'vehicle_1',
+        ),
+      );
+      await tester.pumpWidget(
+        _testApp(
+          EmployeeHomeScreen(onNavigateToMap: () => openedMap = true),
+          controller,
+        ),
+      );
+      await tester.ensureVisible(find.byKey(const Key('track_cab_button')));
+      await tester.tap(find.byKey(const Key('track_cab_button')));
+      expect(openedMap, isTrue);
+    });
+
+    testWidgets('13. assigned state labels unavailable KPI values honestly', (
+      tester,
+    ) async {
+      final controller = _createTestController(
+        attendance: _checkedInAttendance(),
+        member: const CabAssignmentMemberModel(
+          id: 'mem_1',
+          assignmentId: 'assign_1',
+          dateKey: '2026-07-22',
+          userId: 'test_uid',
+          pickupName: 'Office Gate',
+          pickupAddress: '123 Main St',
+          pickupLatitude: 28.6139,
+          pickupLongitude: 77.2090,
+        ),
+        assignment: const CabAssignmentModel(
+          id: 'assign_1',
+          dateKey: '2026-07-22',
+          driverId: 'driver_1',
+        ),
+      );
+      await tester.pumpWidget(
+        _testApp(EmployeeHomeScreen(onNavigateToMap: () {}), controller),
+      );
+
+      expect(find.text('MY DISTANCE'), findsOneWidget);
+      expect(find.text('MY ETA'), findsOneWidget);
+      expect(find.text('Location unavailable'), findsOneWidget);
+      expect(find.text('Traffic ETA unavailable'), findsOneWidget);
+      expect(find.text('CAB TO YOUR PICKUP'), findsOneWidget);
+    });
+
+    testWidgets('14. route timeline is ordered and privacy-safe', (
+      tester,
+    ) async {
+      final controller = _createTestController(
+        attendance: _checkedInAttendance(),
+        member: const CabAssignmentMemberModel(
+          id: 'mem_1',
+          assignmentId: 'assign_1',
+          dateKey: '2026-07-22',
+          userId: 'test_uid',
+          pickupName: 'Office Gate',
+          pickupAddress: 'My private pickup',
+          pickupLatitude: 28.6139,
+          pickupLongitude: 77.2090,
+        ),
+        assignment: const CabAssignmentModel(
+          id: 'assign_1',
+          dateKey: '2026-07-22',
+          driverId: 'driver_1',
+          vehicleId: 'vehicle_1',
+        ),
+      );
+      controller.passengerProgressList = [
+        PassengerProgressModel(
+          employeeId: 'other_uid',
+          passengerDisplayName: 'Priya',
+          pickupSequence: 2,
+          status: 'ready',
+          distanceToPickupMeters: 450,
+          locationFreshness: 'live',
+          updatedAt: DateTime(2026, 7, 22, 9, 59),
+        ),
+        PassengerProgressModel(
+          employeeId: 'test_uid',
+          passengerDisplayName: 'Test Employee',
+          pickupSequence: 3,
+          status: 'travelling_to_pickup',
+          distanceToPickupMeters: 300,
+          locationFreshness: 'live',
+          updatedAt: DateTime(2026, 7, 22, 9, 59),
+        ),
+      ];
+
+      await tester.pumpWidget(
+        _testApp(EmployeeHomeScreen(onNavigateToMap: () {}), controller),
+      );
+
+      await tester.dragUntilVisible(
+        find.text('Priya'),
+        find.byType(CustomScrollView),
+        const Offset(0, -400),
+      );
+      expect(find.text('Priya'), findsOneWidget);
+      expect(find.text('Test Employee (You)'), findsOneWidget);
+      expect(find.textContaining('450 m'), findsNothing);
+      expect(find.text('0.5 km'), findsOneWidget);
+      expect(find.textContaining('other private pickup'), findsNothing);
+    });
+
+    testWidgets('15. Home fits 320px width with long identity values', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(320, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final controller = _createTestController(
+        user: const UserModel(
+          uid: 'test_uid',
+          name: 'Very Long Employee Name For Responsive Verification',
+          email: 'employee@example.com',
+          phone: '',
+          role: 'Manager',
+          profileImage: '',
+          employeeCode: 'EMPLOYEE-CODE-VERY-LONG-001',
+        ),
+        attendance: _checkedInAttendance(),
+      );
+
+      await tester.pumpWidget(
+        _testApp(EmployeeHomeScreen(onNavigateToMap: () {}), controller),
+      );
+      await tester.pumpAndSettle();
+
+      final layoutError = tester.takeException();
+      expect(layoutError, isNull);
+      expect(find.textContaining('Very Long Employee'), findsOneWidget);
+    });
   });
 
   group('Employee Map Screen Widget Tests', () {
+    testWidgets('daily route input fields are always visible', (tester) async {
+      final controller = _createTestController(
+        user: const UserModel(
+          uid: 'test_uid',
+          name: 'Test Employee',
+          email: 'test@example.com',
+          phone: '',
+          role: 'Employee',
+          profileImage: '',
+          homeAddress: 'My Home',
+          preferredPickupAddress: 'Approved Pickup',
+        ),
+      );
+
+      await tester.pumpWidget(_testApp(const EmployeeMapScreen(), controller));
+
+      expect(find.text('YOUR LOCATION'), findsOneWidget);
+      expect(find.text('PICKUP LOCATION'), findsOneWidget);
+      expect(find.text('DESTINATION LOCATION'), findsOneWidget);
+      expect(find.byKey(const Key('use_current_location')), findsOneWidget);
+      expect(find.text('My Home'), findsOneWidget);
+      expect(find.text('Approved Pickup'), findsOneWidget);
+    });
+
     // 8. Map empty state has no giant unused blank layout
     // NOTE: GoogleMap widget requires platform channels so we test the empty
     // state which does NOT use GoogleMap.
