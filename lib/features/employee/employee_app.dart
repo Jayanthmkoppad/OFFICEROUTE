@@ -7,26 +7,40 @@ import 'employee_map_screen.dart';
 import 'employee_profile_screen.dart';
 
 class EmployeeApp extends StatefulWidget {
-  const EmployeeApp({super.key});
+  const EmployeeApp({super.key, this.controller});
+
+  @visibleForTesting
+  final EmployeeTransportController? controller;
 
   @override
   State<EmployeeApp> createState() => _EmployeeAppState();
 }
 
-class _EmployeeAppState extends State<EmployeeApp> {
+class _EmployeeAppState extends State<EmployeeApp> with WidgetsBindingObserver {
   late final EmployeeTransportController _controller;
+  late final bool _ownsController;
   int _currentIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _controller = EmployeeTransportController();
+    WidgetsBinding.instance.addObserver(this);
+    _ownsController = widget.controller == null;
+    _controller = widget.controller ?? EmployeeTransportController();
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    if (_ownsController) _controller.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _controller.refreshCurrentDay();
+    }
   }
 
   void _selectTab(int index) {
@@ -41,6 +55,7 @@ class _EmployeeAppState extends State<EmployeeApp> {
       controller: _controller,
       child: Scaffold(
         body: IndexedStack(
+          key: const Key('employee_tab_stack'),
           index: _currentIndex,
           children: [
             EmployeeHomeScreen(onNavigateToMap: () => _selectTab(1)),

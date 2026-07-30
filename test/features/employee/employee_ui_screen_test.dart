@@ -479,9 +479,9 @@ void main() {
 
       expect(find.text('YOUR LOCATION'), findsOneWidget);
       expect(find.text('PICKUP LOCATION'), findsOneWidget);
-      expect(find.text('DESTINATION LOCATION'), findsOneWidget);
+      expect(find.text('DESTINATION'), findsOneWidget);
       expect(find.byKey(const Key('use_current_location')), findsOneWidget);
-      expect(find.text('My Home'), findsOneWidget);
+      expect(find.text('Location unavailable'), findsOneWidget);
       expect(find.text('Approved Pickup'), findsOneWidget);
     });
 

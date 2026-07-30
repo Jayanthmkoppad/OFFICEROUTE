@@ -868,10 +868,6 @@ class EmployeeTransportController extends ChangeNotifier {
   void _listenToDriverLocation(String driverId, int token) async {
     await _cancelSubscription(_driverLocationSubscription);
     _driverLocationSubscription = null;
-    await _cancelSubscription(_driverUserSubscription);
-    _driverUserSubscription = null;
-    await _cancelSubscription(_vehicleSubscription);
-    _vehicleSubscription = null;
     driverLiveLocation = null;
 
     final driverStream = driverLocationStreamFactory != null
@@ -1049,6 +1045,10 @@ class EmployeeTransportController extends ChangeNotifier {
     _tripSubscription = null;
     await _cancelSubscription(_driverLocationSubscription);
     _driverLocationSubscription = null;
+    await _cancelSubscription(_driverUserSubscription);
+    _driverUserSubscription = null;
+    await _cancelSubscription(_vehicleSubscription);
+    _vehicleSubscription = null;
     await _cancelSubscription(_riderSubscription);
     _riderSubscription = null;
     await _cancelSubscription(_passengerProgressSubscription);
@@ -1064,6 +1064,8 @@ class EmployeeTransportController extends ChangeNotifier {
     _rosterUsersById = {};
     rosterDiagnosticCode = 'ok';
     driverLiveLocation = null;
+    assignedDriver = null;
+    assignedVehicle = null;
 
     final stopSuccess = await _stopLocationTrackingSession(
       stopReason: stopReason,
@@ -1353,6 +1355,10 @@ class EmployeeTransportController extends ChangeNotifier {
     _passengerProgressSubscription = null;
     await _cancelSubscription(_driverLocationSubscription);
     _driverLocationSubscription = null;
+    await _cancelSubscription(_driverUserSubscription);
+    _driverUserSubscription = null;
+    await _cancelSubscription(_vehicleSubscription);
+    _vehicleSubscription = null;
     await _cancelSubscription(_employeeLocationSubscription);
     _employeeLocationSubscription = null;
     await _cancelSubscription(_foregroundTrackingSubscription);
