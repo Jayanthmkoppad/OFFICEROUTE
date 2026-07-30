@@ -607,7 +607,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      final button = tester.widget<OutlinedButton>(
+      final button = tester.widget<ElevatedButton>(
         find.byKey(const Key('sign_out_button')),
       );
       // Button should be disabled when isActionLoading is true
@@ -642,7 +642,7 @@ void main() {
 
       // Verify long values are rendered
       expect(find.textContaining('Very Long Employee'), findsOneWidget);
-      expect(find.textContaining('Engineering Research'), findsOneWidget);
+      expect(find.textContaining('Headquarters - Main Campus'), findsOneWidget);
     });
   });
 
