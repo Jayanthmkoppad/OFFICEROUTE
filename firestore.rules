@@ -1,0 +1,1072 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -----------------------------------------------------------------
+    // Helper Functions
+    // -----------------------------------------------------------------
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isBootstrapAdministrator() {
+      return signedIn() &&
+        'token' in request.auth &&
+        'email' in request.auth.token &&
+        request.auth.token.email == 'jayanthmkoppad2@gmail.com';
+    }
+
+    function userProfile() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userRole() {
+      return userProfile().data.role.lower();
+    }
+
+    function hasRole(role) {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        'role' in userProfile().data &&
+        (userRole() == role.lower() ||
+          (role == 'driver' &&
+            userRole() in ['driver', 'cab_driver', 'cab driver'])) &&
+        accountIsActive();
+    }
+
+    function isManagerOrAdmin() {
+      return isBootstrapAdministrator() ||
+        (signedIn() &&
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          'role' in userProfile().data &&
+          userRole() in [
+            'manager', 'admin', 'administrator', 'application_owner',
+            'owner', 'ceo'
+          ] && accountIsActive());
+    }
+
+    function isAdministrator() {
+      return isBootstrapAdministrator() ||
+        (signedIn() &&
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          'role' in userProfile().data &&
+          userRole() in [
+            'admin', 'administrator', 'application_owner', 'owner'
+          ] && accountIsActive());
+    }
+
+    function isCabDriver() {
+      return signedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        'role' in userProfile().data &&
+        userRole() in ['driver', 'cab_driver', 'cab driver'] &&
+        accountIsActive();
+    }
+
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function validSelfSessionRequest() {
+      return request.resource.data.sessionApproved == false &&
+        request.resource.data.approvalStatus == 'Pending' &&
+        request.resource.data.role in ['employee', 'driver', 'manager'];
+    }
+
+    function validSelfProfileUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'name', 'phone', 'profileImage', 'department', 'designation',
+        'branch', 'reportingManager', 'joiningDate', 'employeeCode',
+        'emergencyContact', 'bloodGroup', 'skills', 'certifications',
+        'themeMode', 'language', 'locationAccuracy', 'biometricEnabled',
+        'lastLogin', 'lastSeen', 'isFirstLogin', 'licenseNumber',
+        'homeAddress', 'homeLatitude', 'homeLongitude',
+        'preferredPickupAddress', 'preferredPickupLatitude',
+        'preferredPickupLongitude', 'officeName', 'officeAddress',
+        'officeLatitude', 'officeLongitude'
+      ]);
+    }
+
+    function validSelfDeviceRequest(userId) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'pendingDeviceId', 'pendingDeviceModel', 'pendingDevicePlatform',
+          'pendingDeviceAppVersion', 'deviceRequestAt',
+          'deviceApprovalStatus', 'lastSeen'
+        ]) &&
+        request.resource.data.pendingDeviceId is string &&
+        request.resource.data.pendingDeviceId.size() > 0 &&
+        request.resource.data.deviceApprovalStatus == 'Pending';
+    }
+
+    // Helper to fetch cab assignment for validation
+    function getAssignment(assignmentId) {
+      return get(/databases/$(database)/documents/cab_assignments/$(assignmentId));
+    }
+
+    function assignmentExists(assignmentId) {
+      return assignmentId != null &&
+        assignmentId != '' &&
+        exists(/databases/$(database)/documents/cab_assignments/$(assignmentId));
+    }
+
+    function assignmentHasLiveTrip(assignmentId) {
+      let assignment = get(/databases/$(database)/documents/cab_assignments/$(assignmentId)).data;
+      return assignmentExists(assignmentId) &&
+        exists(/databases/$(database)/documents/cab_trips/$(('trip_' + assignment.dateKey + '_' + assignment.driverId))) &&
+        get(/databases/$(database)/documents/cab_trips/$(('trip_' + assignment.dateKey + '_' + assignment.driverId))).data.status in ['active', 'office_arrived'];
+    }
+
+    function validPickup(data) {
+      return data.pickupName is string &&
+        data.pickupName.size() > 0 &&
+        data.pickupAddress is string &&
+        data.pickupAddress.size() > 0 &&
+        data.pickupLatitude is number &&
+        data.pickupLatitude >= -90 && data.pickupLatitude <= 90 &&
+        data.pickupLongitude is number &&
+        data.pickupLongitude >= -180 && data.pickupLongitude <= 180;
+    }
+
+    function validOperationalScope(data) {
+      return ((data.branch is string && data.branch.size() > 0 &&
+          userProfile().data.branch == data.branch) ||
+        (data.serviceCentre is string && data.serviceCentre.size() > 0 &&
+          userProfile().data.serviceCentre == data.serviceCentre));
+    }
+
+    function activeDriverShift(dateKey) {
+      return exists(/databases/$(database)/documents/cab_driver_shifts/$(dateKey + '_' + request.auth.uid)) &&
+        get(/databases/$(database)/documents/cab_driver_shifts/$(dateKey + '_' + request.auth.uid)).data.driverId == request.auth.uid &&
+        get(/databases/$(database)/documents/cab_driver_shifts/$(dateKey + '_' + request.auth.uid)).data.shiftStatus == 'active';
+    }
+
+    function isClaimedMember(dateKey, employeeId, assignmentId) {
+      return exists(/databases/$(database)/documents/cab_assignment_members/$(dateKey + '_' + employeeId)) &&
+        get(/databases/$(database)/documents/cab_assignment_members/$(dateKey + '_' + employeeId)).data.userId == employeeId &&
+        get(/databases/$(database)/documents/cab_assignment_members/$(dateKey + '_' + employeeId)).data.assignmentId == assignmentId &&
+        get(/databases/$(database)/documents/cab_assignment_members/$(dateKey + '_' + employeeId)).data.driverId != '';
+    }
+
+    function isClaimedMemberAfter(dateKey, employeeId, assignmentId) {
+      return existsAfter(/databases/$(database)/documents/cab_assignment_members/$(dateKey + '_' + employeeId)) &&
+        getAfter(/databases/$(database)/documents/cab_assignment_members/$(dateKey + '_' + employeeId)).data.userId == employeeId &&
+        getAfter(/databases/$(database)/documents/cab_assignment_members/$(dateKey + '_' + employeeId)).data.assignmentId == assignmentId &&
+        getAfter(/databases/$(database)/documents/cab_assignment_members/$(dateKey + '_' + employeeId)).data.status == 'claimed';
+    }
+
+    function validDriverInvitation(memberId) {
+      let employee = get(
+        /databases/$(database)/documents/users/$(request.resource.data.userId)
+      ).data;
+      let shift = get(
+        /databases/$(database)/documents/cab_driver_shifts/$(request.resource.data.shiftId)
+      ).data;
+      return isCabDriver() &&
+        request.resource.data.keys().hasOnly([
+          'assignmentId', 'dateKey', 'userId', 'role', 'branch',
+          'serviceCentre', 'operationalDay', 'driverId', 'vehicleId',
+          'status', 'invitationStatus', 'shiftId', 'declineReason',
+          'invitedAt', 'respondedAt', 'officeName', 'officeAddress',
+          'officeLatitude', 'officeLongitude', 'pickupName',
+          'pickupAddress', 'pickupLatitude', 'pickupLongitude',
+          'pickupValid', 'createdAt', 'updatedAt'
+        ]) &&
+        memberId == request.resource.data.dateKey + '_' +
+          request.resource.data.userId &&
+        request.resource.data.userId != request.auth.uid &&
+        employee.role.lower() == 'employee' &&
+        request.resource.data.role == 'employee' &&
+        request.resource.data.driverId == request.auth.uid &&
+        request.resource.data.assignmentId == '' &&
+        request.resource.data.status == 'invited' &&
+        request.resource.data.invitationStatus == 'invited' &&
+        request.resource.data.declineReason == '' &&
+        request.resource.data.respondedAt == null &&
+        request.resource.data.shiftId ==
+          request.resource.data.dateKey + '_' + request.auth.uid &&
+        activeDriverShift(request.resource.data.dateKey) &&
+        shift.vehicleId == request.resource.data.vehicleId &&
+        shift.officeName == request.resource.data.officeName &&
+        shift.officeAddress == request.resource.data.officeAddress &&
+        shift.officeLatitude == request.resource.data.officeLatitude &&
+        shift.officeLongitude == request.resource.data.officeLongitude &&
+        validDestination(request.resource.data) &&
+        validOperationalScope(request.resource.data) &&
+        employee.branch == request.resource.data.branch &&
+        employee.serviceCentre == request.resource.data.serviceCentre &&
+        isCurrentOperationalTimestamp(request.resource.data.operationalDay) &&
+        request.resource.data.invitedAt is timestamp &&
+        request.resource.data.createdAt is timestamp &&
+        request.resource.data.updatedAt is timestamp;
+    }
+
+    function validEmployeeInvitationResponse() {
+      return signedIn() &&
+        resource.data.userId == request.auth.uid &&
+        resource.data.invitationStatus == 'invited' &&
+        resource.data.status == 'invited' &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.driverId == resource.data.driverId &&
+        request.resource.data.vehicleId == resource.data.vehicleId &&
+        request.resource.data.shiftId == resource.data.shiftId &&
+        request.resource.data.assignmentId == resource.data.assignmentId &&
+        request.resource.data.officeName == resource.data.officeName &&
+        request.resource.data.officeAddress == resource.data.officeAddress &&
+        request.resource.data.officeLatitude == resource.data.officeLatitude &&
+        request.resource.data.officeLongitude == resource.data.officeLongitude &&
+        request.resource.data.respondedAt is timestamp &&
+        request.resource.data.updatedAt is timestamp &&
+        (
+          (
+            request.resource.data.invitationStatus == 'declined' &&
+            request.resource.data.status == 'declined' &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'invitationStatus', 'declineReason',
+              'respondedAt', 'updatedAt'
+            ])
+          ) ||
+          (
+            request.resource.data.invitationStatus == 'accepted' &&
+            request.resource.data.status == 'accepted' &&
+            request.resource.data.pickupValid == true &&
+            validPickup(request.resource.data) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'invitationStatus', 'declineReason',
+              'pickupName', 'pickupAddress', 'pickupLatitude',
+              'pickupLongitude', 'pickupValid', 'respondedAt', 'updatedAt'
+            ])
+          )
+        );
+    }
+
+    function validEmployeeRequest(memberId) {
+      return request.resource.data.keys().hasOnly([
+          'assignmentId', 'dateKey', 'userId', 'role', 'branch',
+          'serviceCentre', 'operationalDay', 'driverId', 'vehicleId',
+          'status', 'pickupName', 'pickupAddress', 'pickupLatitude',
+          'pickupLongitude', 'pickupValid', 'createdAt', 'updatedAt'
+        ]) &&
+        memberId == request.resource.data.dateKey + '_' + request.auth.uid &&
+        request.resource.data.userId == request.auth.uid &&
+        request.resource.data.role == 'employee' &&
+        request.resource.data.assignmentId == '' &&
+        request.resource.data.driverId == '' &&
+        request.resource.data.vehicleId == '' &&
+        request.resource.data.status == 'assigned' &&
+        request.resource.data.pickupValid == true &&
+        request.resource.data.operationalDay is timestamp &&
+        request.time >= request.resource.data.operationalDay &&
+        request.time < request.resource.data.operationalDay + duration.value(1, 'd') &&
+        request.resource.data.createdAt is timestamp &&
+        request.resource.data.updatedAt is timestamp &&
+        validOperationalScope(request.resource.data) &&
+        validPickup(request.resource.data);
+    }
+
+    function accountIsActive() {
+      return !('status' in userProfile().data) ||
+        userProfile().data.status.lower() == 'active';
+    }
+
+    function isCurrentOperationalTimestamp(value) {
+      return value is timestamp &&
+        request.time >= value &&
+        request.time < value + duration.value(1, 'd');
+    }
+
+    function validDestination(data) {
+      return data.officeName is string && data.officeName.size() > 0 &&
+        data.officeAddress is string && data.officeAddress.size() > 0 &&
+        data.officeLatitude is number &&
+        data.officeLatitude >= -90 && data.officeLatitude <= 90 &&
+        data.officeLongitude is number &&
+        data.officeLongitude >= -180 && data.officeLongitude <= 180;
+    }
+
+    function activeShiftVehicle(dateKey, vehicleId) {
+      return activeDriverShift(dateKey) &&
+        get(/databases/$(database)/documents/cab_driver_shifts/$(dateKey + '_' + request.auth.uid)).data.vehicleId == vehicleId;
+    }
+
+    function claimedEmployeeAfter(dateKey, assignmentId, employeeId) {
+      return isClaimedMemberAfter(dateKey, employeeId, assignmentId) &&
+        getAfter(/databases/$(database)/documents/cab_assignment_members/$(dateKey + '_' + employeeId)).data.driverId == request.auth.uid;
+    }
+
+    function validClaimedEmployeeListAfter(dateKey, assignmentId, employees) {
+      return employees is list &&
+        employees.size() > 0 &&
+        employees.size() <= 8 &&
+        claimedEmployeeAfter(dateKey, assignmentId, employees[0]) &&
+        (employees.size() < 2 || claimedEmployeeAfter(dateKey, assignmentId, employees[1])) &&
+        (employees.size() < 3 || claimedEmployeeAfter(dateKey, assignmentId, employees[2])) &&
+        (employees.size() < 4 || claimedEmployeeAfter(dateKey, assignmentId, employees[3])) &&
+        (employees.size() < 5 || claimedEmployeeAfter(dateKey, assignmentId, employees[4])) &&
+        (employees.size() < 6 || claimedEmployeeAfter(dateKey, assignmentId, employees[5])) &&
+        (employees.size() < 7 || claimedEmployeeAfter(dateKey, assignmentId, employees[6])) &&
+        (employees.size() < 8 || claimedEmployeeAfter(dateKey, assignmentId, employees[7]));
+    }
+
+    function validTripTransition(fromStatus, toStatus) {
+      return (fromStatus == 'created' && toStatus in ['active', 'cancelled']) ||
+        (fromStatus == 'active' && toStatus in ['office_arrived', 'completed', 'cancelled']) ||
+        (fromStatus == 'office_arrived' && toStatus == 'completed') ||
+        fromStatus == toStatus;
+    }
+
+    function validRiderTransition(fromStatus, toStatus) {
+      return (fromStatus in ['assigned', 'ready', 'travelling_to_pickup'] &&
+          toStatus in ['waiting', 'cancelled', 'no_show']) ||
+        (fromStatus == 'waiting' && toStatus in ['picked_up', 'cancelled', 'no_show']) ||
+        (fromStatus in ['picked_up', 'boarded'] && toStatus == 'dropped') ||
+        fromStatus == toStatus;
+    }
+
+    function validProgressTransition(fromStatus, toStatus) {
+      return fromStatus == toStatus ||
+        (fromStatus in ['assigned', 'ready', 'travelling_to_pickup'] &&
+          toStatus in ['waiting', 'near_pickup', 'picked_up', 'cancelled', 'no_show']) ||
+        (fromStatus in ['waiting', 'near_pickup'] &&
+          toStatus in ['picked_up', 'cancelled', 'no_show']) ||
+        (fromStatus in ['picked_up', 'boarded'] &&
+          toStatus in ['dropped', 'completed']);
+    }
+    // -----------------------------------------------------------------
+    // User Management
+    // -----------------------------------------------------------------
+
+    match /users/{userId} {
+      allow get: if isSelf(userId) || isAdministrator() ||
+        (isCabDriver() &&
+          resource.data.role.lower() == 'employee' &&
+          validOperationalScope(resource.data)) ||
+        (signedIn() && 'email' in resource.data &&
+          resource.data.email == 'jayanthmkoppad2@gmail.com');
+      allow list: if isManagerOrAdmin() ||
+        (isCabDriver() &&
+          resource.data.role.lower() == 'employee' &&
+          validOperationalScope(resource.data));
+      allow create: if isBootstrapAdministrator() ||
+        (isSelf(userId) && validSelfSessionRequest());
+      allow update: if isAdministrator() ||
+        (
+          isSelf(userId) &&
+          (
+            validSelfProfileUpdate() ||
+            validSelfDeviceRequest(userId) ||
+            (
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'name', 'displayName', 'email', 'phone', 'employeeId', 'employeeCode',
+                'branch', 'department', 'designation', 'serviceCentre',
+                'vehicleNumber', 'reportingRegion', 'remarks', 'role',
+                'sessionRole', 'deviceId', 'deviceModel', 'platform',
+                'appVersion', 'loginProvider', 'sessionApproved',
+                'approvalStatus', 'requestedAt', 'approvedAt', 'approvedBy',
+                'rejectionReason', 'administratorRemarks', 'lastLogin',
+                'lastSeen', 'isFirstLogin', 'status', 'approvalHistory'
+              ]) &&
+              validSelfSessionRequest() &&
+              ('email' in request.auth.token && request.resource.data.email == request.auth.token.email)
+            )
+          )
+        );
+      allow delete: if false;
+    }
+
+    // -----------------------------------------------------------------
+    // Attendance Management
+    // -----------------------------------------------------------------
+
+    match /attendance/{attendanceId} {
+      allow read: if isManagerOrAdmin() ||
+        (signedIn() && 'userId' in resource.data && resource.data.userId == request.auth.uid);
+      allow create: if isManagerOrAdmin() ||
+        (signedIn() && request.resource.data.userId == request.auth.uid);
+      allow update: if isManagerOrAdmin() ||
+        (signedIn() && resource.data.userId == request.auth.uid && request.resource.data.userId == request.auth.uid);
+      allow delete: if isManagerOrAdmin();
+    }
+
+    // -----------------------------------------------------------------
+    // Notifications
+    // -----------------------------------------------------------------
+
+    function isTripMemberAfter(dateKey, employeeId, assignmentId) {
+      return existsAfter(/databases/$(database)/documents/cab_assignment_members/$(dateKey + '_' + employeeId)) &&
+        getAfter(/databases/$(database)/documents/cab_assignment_members/$(dateKey + '_' + employeeId)).data.userId == employeeId &&
+        getAfter(/databases/$(database)/documents/cab_assignment_members/$(dateKey + '_' + employeeId)).data.assignmentId == assignmentId &&
+        getAfter(/databases/$(database)/documents/cab_assignment_members/$(dateKey + '_' + employeeId)).data.driverId == request.auth.uid;
+    }
+
+    function validDriverTripNotification() {
+      let trip = getAfter(/databases/$(database)/documents/cab_trips/$(request.resource.data.tripId)).data;
+      let assignment = getAfter(/databases/$(database)/documents/cab_assignments/$(request.resource.data.assignmentId)).data;
+      return isCabDriver() &&
+        request.resource.data.keys().hasOnly([
+          'id', 'userId', 'recipientUserId', 'title', 'body', 'type',
+          'source', 'tripId', 'assignmentId', 'driverId',
+          'cancellationReason', 'isRead', 'createdAt', 'readAt'
+        ]) &&
+        request.resource.data.userId is string &&
+        request.resource.data.userId.size() > 0 &&
+        request.resource.data.title is string &&
+        request.resource.data.body is string &&
+        request.resource.data.tripId is string &&
+        request.resource.data.tripId.size() > 0 &&
+        request.resource.data.assignmentId is string &&
+        request.resource.data.assignmentId.size() > 0 &&
+        request.resource.data.driverId == request.auth.uid &&
+        request.resource.data.createdAt is timestamp &&
+        trip.driverId == request.auth.uid &&
+        trip.assignmentId == request.resource.data.assignmentId &&
+        request.resource.data.userId in trip.employeeIds &&
+        isTripMemberAfter(
+          assignment.dateKey,
+          request.resource.data.userId,
+          request.resource.data.assignmentId
+        ) &&
+        (
+          (request.resource.data.type == 'cab_trip_started' &&
+            trip.status == 'active') ||
+          (request.resource.data.type in [
+              'cab_arriving', 'cab_reached', 'cab_picked_up',
+              'cab_pickup_skipped'
+            ] && trip.status == 'active') ||
+          (request.resource.data.type == 'cab_dropped' &&
+            trip.status in ['active', 'office_arrived']) ||
+          (request.resource.data.type == 'cab_trip_completed' &&
+            trip.status == 'completed') ||
+          (request.resource.data.type == 'cab_trip_cancelled' &&
+            trip.status == 'cancelled' &&
+            request.resource.data.recipientUserId == request.resource.data.userId &&
+            request.resource.data.cancellationReason is string &&
+            request.resource.data.cancellationReason.size() > 0)
+        );
+    }
+
+    function validDriverInvitationNotification() {
+      let member = getAfter(
+        /databases/$(database)/documents/cab_assignment_members/$(request.resource.data.memberId)
+      ).data;
+      return isCabDriver() &&
+        request.resource.data.keys().hasOnly([
+          'id', 'userId', 'title', 'body', 'type', 'source', 'driverId',
+          'shiftId', 'memberId', 'isRead', 'createdAt', 'readAt'
+        ]) &&
+        request.resource.data.id is string &&
+        request.resource.data.userId is string &&
+        request.resource.data.title is string &&
+        request.resource.data.body is string &&
+        request.resource.data.type == 'cab_transport_invitation' &&
+        request.resource.data.source == 'transport_invitation' &&
+        request.resource.data.driverId == request.auth.uid &&
+        request.resource.data.isRead == false &&
+        request.resource.data.readAt == null &&
+        request.resource.data.createdAt is timestamp &&
+        member.userId == request.resource.data.userId &&
+        member.driverId == request.auth.uid &&
+        member.shiftId == request.resource.data.shiftId &&
+        member.invitationStatus == 'invited' &&
+        member.status == 'invited' &&
+        activeDriverShift(member.dateKey);
+    }
+    match /notifications/{notificationId} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow create: if signedIn() &&
+        (
+          (request.resource.data.userId == request.auth.uid &&
+            !(request.resource.data.type in [
+              'cab_arriving', 'cab_reached', 'cab_picked_up', 'cab_dropped',
+              'cab_pickup_skipped', 'cab_trip_started',
+              'cab_trip_completed', 'cab_trip_cancelled'
+            ])) ||
+          isAdministrator() ||
+          validDriverInvitationNotification() ||
+          validDriverTripNotification()
+        );
+      allow update: if signedIn() &&
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'isRead', 'readAt'
+        ]);
+      allow delete: if signedIn() && resource.data.userId == request.auth.uid;
+    }
+    // -----------------------------------------------------------------
+    // Location & Session Tracking
+    // -----------------------------------------------------------------
+
+    function validLocationPayload(userId) {
+      return request.resource.data.userId == userId &&
+        request.resource.data.latitude is number &&
+        request.resource.data.longitude is number &&
+        request.resource.data.recordedAt is timestamp &&
+        request.resource.data.sessionId is string &&
+        request.resource.data.trackingReason is string &&
+        request.resource.data.status is string &&
+        (
+          !(request.resource.data.trackingReason in ['cab_pickup_ready', 'driver_active_trip']) ||
+          (request.resource.data.assignmentId is string && request.resource.data.assignmentId.size() > 0)
+        );
+    }
+
+    function validLocationStatusPayload(userId) {
+      return request.resource.data.userId == userId &&
+        request.resource.data.sessionId is string &&
+        request.resource.data.trackingReason is string &&
+        request.resource.data.status is string &&
+        request.resource.data.updatedAt is timestamp;
+    }
+
+    match /live_locations/{userId} {
+      allow read: if isAdministrator() ||
+        isSelf(userId) ||
+        (
+          // Employee reading assigned Driver's live location
+          resource.data.assignmentId != null &&
+          resource.data.assignmentId != '' &&
+          assignmentExists(resource.data.assignmentId) &&
+          assignmentHasLiveTrip(resource.data.assignmentId) &&
+          getAssignment(resource.data.assignmentId).data.driverId == userId &&
+          getAssignment(resource.data.assignmentId).data.status in ['active', 'started'] &&
+          resource.data.status != 'offline' &&
+          request.auth.uid in getAssignment(resource.data.assignmentId).data.employeeIds
+        ) ||
+        (
+          // Driver reading assigned Employee's live location
+          resource.data.assignmentId != null &&
+          resource.data.assignmentId != '' &&
+          assignmentExists(resource.data.assignmentId) &&
+          assignmentHasLiveTrip(resource.data.assignmentId) &&
+          getAssignment(resource.data.assignmentId).data.driverId == request.auth.uid &&
+          getAssignment(resource.data.assignmentId).data.status in ['active', 'started'] &&
+          resource.data.status != 'offline' &&
+          userId in getAssignment(resource.data.assignmentId).data.employeeIds
+        );
+      allow create, update: if isSelf(userId) &&
+        (
+          validLocationPayload(userId) ||
+          validLocationStatusPayload(userId)
+        );
+      allow delete: if false;
+    }
+
+    match /shared_map_presence/{userId} {
+      allow read: if isManagerOrAdmin() || isSelf(userId);
+      allow create, update: if isSelf(userId) &&
+        request.resource.data.userId == userId &&
+        request.resource.data.keys().hasOnly([
+          'userId', 'displayName', 'role', 'latitude', 'longitude',
+          'status', 'updatedAt'
+        ]) &&
+        request.resource.data.latitude is number &&
+        request.resource.data.longitude is number &&
+        request.resource.data.updatedAt is timestamp;
+      allow delete: if false;
+    }
+
+    match /location_sessions/{sessionId} {
+      allow read: if isSelf(resource.data.userId) || isAdministrator();
+      allow create: if isSelf(request.resource.data.userId) &&
+        request.resource.data.keys().hasOnly([
+          'id', 'userId', 'trackingReason', 'status', 'startedAt',
+          'pausedAt', 'resumedAt', 'stoppedAt', 'lastLatitude',
+          'lastLongitude', 'lastUpdatedAt', 'stopReason', 'metadata'
+        ]) &&
+        request.resource.data.status == 'active' &&
+        request.resource.data.startedAt is timestamp;
+      allow update: if isSelf(resource.data.userId) &&
+        resource.data.status != 'stopped' &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.trackingReason == resource.data.trackingReason &&
+        request.resource.data.startedAt == resource.data.startedAt &&
+        request.resource.data.metadata == resource.data.metadata &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status', 'pausedAt', 'resumedAt', 'stoppedAt',
+          'lastLatitude', 'lastLongitude', 'lastUpdatedAt', 'stopReason'
+        ]) &&
+        (
+          (resource.data.status == 'active' &&
+            request.resource.data.status in ['active', 'paused', 'stopped']) ||
+          (resource.data.status == 'paused' &&
+            request.resource.data.status in ['active', 'paused', 'stopped'])
+        ) &&
+        (request.resource.data.status != 'stopped' ||
+          request.resource.data.stoppedAt is timestamp) &&
+        (!('lastLatitude' in request.resource.data) ||
+          request.resource.data.lastLatitude == null ||
+          (request.resource.data.lastLatitude is number &&
+            request.resource.data.lastLatitude >= -90 &&
+            request.resource.data.lastLatitude <= 90)) &&
+        (!('lastLongitude' in request.resource.data) ||
+          request.resource.data.lastLongitude == null ||
+          (request.resource.data.lastLongitude is number &&
+            request.resource.data.lastLongitude >= -180 &&
+            request.resource.data.lastLongitude <= 180));
+      allow delete: if false;
+
+      match /points/{pointId} {
+        allow read: if isSelf(resource.data.userId) || isAdministrator();
+        allow create: if isSelf(request.resource.data.userId) &&
+          request.resource.data.sessionId == sessionId &&
+          request.resource.data.latitude is number &&
+          request.resource.data.latitude >= -90 &&
+          request.resource.data.latitude <= 90 &&
+          request.resource.data.longitude is number &&
+          request.resource.data.longitude >= -180 &&
+          request.resource.data.longitude <= 180 &&
+          request.resource.data.recordedAt is timestamp;
+        allow update, delete: if false;
+      }
+    }
+    match /location_permissions/{userId} {
+      allow read, create, update: if isSelf(userId);
+      allow delete: if false;
+    }
+
+    match /location_events/{eventId} {
+      allow read: if isSelf(resource.data.userId) || isAdministrator();
+      allow create: if isSelf(request.resource.data.userId);
+      allow update, delete: if false;
+    }
+
+    match /notification_preferences/{userId} {
+      allow read, create, update: if isSelf(userId);
+      allow delete: if false;
+    }
+
+    // -----------------------------------------------------------------
+    // Cab Transport & Dispatch
+    // -----------------------------------------------------------------
+
+    match /cab_assignments/{assignmentId} {
+      allow read: if isManagerOrAdmin() ||
+        (signedIn() && resource.data.driverId == request.auth.uid) ||
+        (signedIn() && request.auth.uid in resource.data.employeeIds &&
+          isClaimedMember(resource.data.dateKey, request.auth.uid, assignmentId));
+      allow create: if isManagerOrAdmin() ||
+        (
+          isCabDriver() &&
+          request.resource.data.keys().hasOnly([
+            'dateKey', 'assignmentDate', 'driverId', 'vehicleId',
+            'employeeIds', 'officeName', 'officeAddress',
+            'officeLatitude', 'officeLongitude', 'branch', 'serviceCentre',
+            'status', 'assignedBy', 'assignedAt', 'updatedAt', 'remarks'
+          ]) &&
+          assignmentId == 'plan_' + request.resource.data.dateKey + '_' + request.auth.uid &&
+          request.resource.data.driverId == request.auth.uid &&
+          request.resource.data.assignedBy == request.auth.uid &&
+          request.resource.data.assignmentDate is timestamp &&
+          request.resource.data.assignedAt is timestamp &&
+          request.resource.data.updatedAt is timestamp &&
+          request.resource.data.status == 'started' &&
+          validDestination(request.resource.data) &&
+          validOperationalScope(request.resource.data) &&
+          activeShiftVehicle(
+            request.resource.data.dateKey,
+            request.resource.data.vehicleId
+          ) &&
+          validClaimedEmployeeListAfter(
+            request.resource.data.dateKey,
+            assignmentId,
+            request.resource.data.employeeIds
+          )
+        );
+      allow delete: if isManagerOrAdmin();
+      allow update: if isManagerOrAdmin() ||
+        (
+          isCabDriver() &&
+          resource.data.driverId == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'cancellationReason', 'cancellationExplanation',
+            'cancelledBy', 'cancelledAt', 'updatedAt'
+          ]) &&
+          (
+            (resource.data.status == 'started' &&
+              request.resource.data.status == 'completed' &&
+              getAfter(/databases/$(database)/documents/cab_trips/$(('trip_' + resource.data.dateKey + '_' + request.auth.uid))).data.status == 'completed') ||
+            (resource.data.status == 'started' &&
+              request.resource.data.status == 'cancelled' &&
+              request.resource.data.cancelledBy == request.auth.uid &&
+              request.resource.data.cancelledAt is timestamp &&
+              request.resource.data.cancellationReason is string &&
+              request.resource.data.cancellationReason.size() > 0 &&
+              getAfter(/databases/$(database)/documents/cab_trips/$(('trip_' + resource.data.dateKey + '_' + request.auth.uid))).data.status == 'cancelled')
+          )
+        );
+    }
+    match /cab_assignment_members/{memberId} {
+      allow get, list: if isManagerOrAdmin() ||
+        (signedIn() && resource.data.userId == request.auth.uid) ||
+        (isCabDriver() && resource.data.driverId == request.auth.uid);
+      allow create: if isManagerOrAdmin() || validDriverInvitation(memberId);
+      allow delete: if isManagerOrAdmin();
+      allow update: if isManagerOrAdmin() ||
+        validEmployeeInvitationResponse() ||
+        (
+          isCabDriver() &&
+          resource.data.driverId == request.auth.uid &&
+          resource.data.invitationStatus == 'accepted' &&
+          resource.data.status == 'accepted' &&
+          activeShiftVehicle(resource.data.dateKey, resource.data.vehicleId) &&
+          validOperationalScope(resource.data) &&
+          validPickup(resource.data) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'assignmentId', 'status', 'invitationStatus', 'updatedAt'
+          ]) &&
+          request.resource.data.assignmentId ==
+            'plan_' + resource.data.dateKey + '_' + request.auth.uid &&
+          request.resource.data.status == 'claimed' &&
+          request.resource.data.invitationStatus == 'trip_active' &&
+          request.resource.data.updatedAt is timestamp &&
+          getAfter(/databases/$(database)/documents/cab_assignments/$(request.resource.data.assignmentId)).data.driverId == request.auth.uid &&
+          getAfter(/databases/$(database)/documents/cab_assignments/$(request.resource.data.assignmentId)).data.vehicleId == resource.data.vehicleId &&
+          resource.data.userId in getAfter(/databases/$(database)/documents/cab_assignments/$(request.resource.data.assignmentId)).data.employeeIds
+        ) ||
+        (
+          isCabDriver() &&
+          resource.data.driverId == request.auth.uid &&
+          request.resource.data.assignmentId == resource.data.assignmentId &&
+          request.resource.data.driverId == resource.data.driverId &&
+          request.resource.data.vehicleId == resource.data.vehicleId &&
+          request.resource.data.userId == resource.data.userId &&
+          request.resource.data.pickupName == resource.data.pickupName &&
+          request.resource.data.pickupAddress == resource.data.pickupAddress &&
+          request.resource.data.pickupLatitude == resource.data.pickupLatitude &&
+          request.resource.data.pickupLongitude == resource.data.pickupLongitude &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'invitationStatus', 'updatedAt'
+          ]) &&
+          request.resource.data.updatedAt is timestamp &&
+          (
+            (resource.data.status in ['claimed', 'waiting', 'arrived'] &&
+              request.resource.data.status in ['waiting', 'arrived', 'picked_up', 'no_show', 'cancelled']) ||
+            (resource.data.status in ['picked_up', 'boarded'] &&
+              request.resource.data.status in ['dropped', 'completed']) ||
+            resource.data.status == request.resource.data.status
+          ) &&
+          (request.resource.data.invitationStatus == resource.data.invitationStatus ||
+            request.resource.data.invitationStatus == 'completed') &&
+          (request.resource.data.status != 'cancelled' ||
+            getAfter(/databases/$(database)/documents/cab_trips/$(('trip_' + resource.data.dateKey + '_' + request.auth.uid))).data.status == 'cancelled')
+        );
+    }    match /cab_vehicles/{vehicleId} {
+      allow read: if signedIn();
+      allow create, update, delete: if isManagerOrAdmin();
+    }
+
+    match /cab_driver_shifts/{shiftId} {
+      allow read: if isManagerOrAdmin() ||
+        (signedIn() && resource.data.driverId == request.auth.uid);
+      allow create: if isManagerOrAdmin() ||
+        (
+          isCabDriver() &&
+          request.resource.data.keys().hasOnly([
+            'driverId', 'vehicleId', 'shiftDate', 'shiftStart', 'shiftEnd',
+            'shiftStatus', 'startLocation', 'endLocation', 'totalDistance',
+            'totalTrips', 'totalEmployees', 'remarks', 'startOdometer',
+            'batteryPercentage', 'vehicleCondition', 'officeName',
+            'officeAddress', 'officeLatitude', 'officeLongitude'
+          ]) &&
+          shiftId == request.resource.data.shiftDate + '_' + request.auth.uid &&
+          request.resource.data.driverId == request.auth.uid &&
+          request.resource.data.vehicleId is string &&
+          request.resource.data.vehicleId.size() > 0 &&
+          exists(/databases/$(database)/documents/cab_vehicles/$(request.resource.data.vehicleId)) &&
+          get(/databases/$(database)/documents/cab_vehicles/$(request.resource.data.vehicleId)).data.status != 'inactive' &&
+          request.resource.data.shiftStatus == 'active' &&
+          isCurrentOperationalTimestamp(request.resource.data.shiftStart) &&
+          (request.resource.data.shiftEnd == null) &&
+          request.resource.data.batteryPercentage is int &&
+          request.resource.data.batteryPercentage >= 0 &&
+          request.resource.data.batteryPercentage <= 100 &&
+          validDestination(request.resource.data)
+        );
+      allow update: if isManagerOrAdmin() ||
+        (
+          isCabDriver() &&
+          resource.data.driverId == request.auth.uid &&
+          resource.data.shiftStatus == 'active' &&
+          request.resource.data.driverId == resource.data.driverId &&
+          request.resource.data.vehicleId == resource.data.vehicleId &&
+          request.resource.data.shiftDate == resource.data.shiftDate &&
+          request.resource.data.shiftStart == resource.data.shiftStart &&
+          request.resource.data.shiftStatus == 'completed' &&
+          request.resource.data.shiftEnd is timestamp &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'shiftEnd', 'shiftStatus', 'endLocation', 'totalDistance',
+            'totalTrips', 'totalEmployees', 'remarks'
+          ]) &&
+          (
+            !exists(/databases/$(database)/documents/cab_trips/$(('trip_' + resource.data.shiftDate + '_' + request.auth.uid))) ||
+            !(get(/databases/$(database)/documents/cab_trips/$(('trip_' + resource.data.shiftDate + '_' + request.auth.uid))).data.status in [
+              'created', 'active', 'office_arrived'
+            ])
+          )
+        );
+      allow delete: if isManagerOrAdmin();
+    }
+    match /cab_trips/{tripId} {
+      allow read: if isManagerOrAdmin() ||
+        (signedIn() && (
+          resource.data.driverId == request.auth.uid ||
+          (
+            assignmentExists(resource.data.assignmentId) &&
+            request.auth.uid in getAssignment(resource.data.assignmentId).data.employeeIds &&
+            isClaimedMember(
+              getAssignment(resource.data.assignmentId).data.dateKey,
+              request.auth.uid,
+              resource.data.assignmentId
+            )
+          )
+        ));
+      allow create: if isManagerOrAdmin() ||
+        (
+          isCabDriver() &&
+          request.resource.data.keys().hasOnly([
+            'driverId', 'vehicleId', 'assignmentId', 'dateKey', 'status',
+            'activeLocationSessionId', 'startedAt', 'officeName',
+            'officeAddress', 'officeLatitude', 'officeLongitude',
+            'branch', 'serviceCentre', 'employeeIds', 'createdAt', 'updatedAt'
+          ]) &&
+          tripId == 'trip_' + request.resource.data.dateKey + '_' + request.auth.uid &&
+          request.resource.data.driverId == request.auth.uid &&
+          request.resource.data.status == 'active' &&
+          request.resource.data.activeLocationSessionId is string &&
+          request.resource.data.activeLocationSessionId.size() > 0 &&
+          request.resource.data.startedAt is timestamp &&
+          request.resource.data.createdAt is timestamp &&
+          request.resource.data.updatedAt is timestamp &&
+          validDestination(request.resource.data) &&
+          validOperationalScope(request.resource.data) &&
+          activeShiftVehicle(
+            request.resource.data.dateKey,
+            request.resource.data.vehicleId
+          ) &&
+          getAfter(/databases/$(database)/documents/cab_assignments/$(request.resource.data.assignmentId)).data.driverId == request.auth.uid &&
+          getAfter(/databases/$(database)/documents/cab_assignments/$(request.resource.data.assignmentId)).data.vehicleId == request.resource.data.vehicleId &&
+          getAfter(/databases/$(database)/documents/cab_assignments/$(request.resource.data.assignmentId)).data.dateKey == request.resource.data.dateKey &&
+          getAfter(/databases/$(database)/documents/cab_assignments/$(request.resource.data.assignmentId)).data.employeeIds == request.resource.data.employeeIds &&
+          validClaimedEmployeeListAfter(
+            request.resource.data.dateKey,
+            request.resource.data.assignmentId,
+            request.resource.data.employeeIds
+          )
+        );
+      allow update: if isManagerOrAdmin() ||
+        (
+          isCabDriver() &&
+          resource.data.driverId == request.auth.uid &&
+          !(resource.data.status in ['completed', 'cancelled']) &&
+          request.resource.data.driverId == resource.data.driverId &&
+          request.resource.data.vehicleId == resource.data.vehicleId &&
+          request.resource.data.assignmentId == resource.data.assignmentId &&
+          request.resource.data.dateKey == resource.data.dateKey &&
+          request.resource.data.employeeIds == resource.data.employeeIds &&
+          request.resource.data.branch == resource.data.branch &&
+          request.resource.data.serviceCentre == resource.data.serviceCentre &&
+          request.resource.data.officeName == resource.data.officeName &&
+          request.resource.data.officeAddress == resource.data.officeAddress &&
+          request.resource.data.officeLatitude == resource.data.officeLatitude &&
+          request.resource.data.officeLongitude == resource.data.officeLongitude &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'activeLocationSessionId', 'officeArrivedAt',
+            'completedAt', 'updatedAt', 'remarks', 'distanceKm',
+            'durationSeconds', 'drivingSeconds', 'idleSeconds',
+            'cancellationReason', 'cancellationExplanation',
+            'cancelledBy', 'cancelledAt'
+          ]) &&
+          validTripTransition(resource.data.status, request.resource.data.status) &&
+          (
+            request.resource.data.status != 'office_arrived' ||
+            request.resource.data.officeArrivedAt is timestamp
+          ) &&
+          (
+            request.resource.data.status != 'completed' ||
+            request.resource.data.completedAt is timestamp
+          ) &&
+          (
+            request.resource.data.status != 'cancelled' ||
+            (
+              resource.data.status in ['created', 'active'] &&
+              request.resource.data.cancelledBy == request.auth.uid &&
+              request.resource.data.cancelledAt is timestamp &&
+              request.resource.data.cancellationReason is string &&
+              request.resource.data.cancellationReason in [
+                'Vehicle breakdown', 'Operational instruction', 'Safety issue',
+                'Route inaccessible', 'Trip created in error', 'Other'
+              ] &&
+              (request.resource.data.cancellationReason != 'Other' ||
+                (request.resource.data.cancellationExplanation is string &&
+                  request.resource.data.cancellationExplanation.size() > 0))
+            )
+          )
+        );
+      allow delete: if isManagerOrAdmin();
+
+      match /riders/{riderId} {
+        allow read: if isManagerOrAdmin() ||
+          (
+            isCabDriver() &&
+            get(/databases/$(database)/documents/cab_trips/$(tripId)).data.driverId == request.auth.uid
+          ) ||
+          (
+            signedIn() &&
+            riderId == request.auth.uid &&
+            resource.data.employeeId == request.auth.uid
+          );
+        allow create: if isManagerOrAdmin() ||
+          (
+            isCabDriver() &&
+            request.resource.data.keys().hasOnly([
+              'tripId', 'assignmentId', 'employeeId', 'status',
+              'pickupOrder', 'pickupName', 'pickupAddress',
+              'pickupLatitude', 'pickupLongitude', 'createdAt', 'updatedAt'
+            ]) &&
+            request.resource.data.tripId == tripId &&
+            request.resource.data.employeeId == riderId &&
+            request.resource.data.status == 'ready' &&
+            request.resource.data.createdAt is timestamp &&
+            request.resource.data.updatedAt is timestamp &&
+            validPickup(request.resource.data) &&
+            getAfter(/databases/$(database)/documents/cab_trips/$(tripId)).data.driverId == request.auth.uid &&
+            getAfter(/databases/$(database)/documents/cab_trips/$(tripId)).data.assignmentId == request.resource.data.assignmentId &&
+            riderId in getAfter(/databases/$(database)/documents/cab_trips/$(tripId)).data.employeeIds
+          );
+        allow update: if isManagerOrAdmin() ||
+          (
+            isCabDriver() &&
+            getAfter(/databases/$(database)/documents/cab_trips/$(tripId)).data.driverId == request.auth.uid &&
+            request.resource.data.tripId == resource.data.tripId &&
+            request.resource.data.assignmentId == resource.data.assignmentId &&
+            request.resource.data.employeeId == resource.data.employeeId &&
+            request.resource.data.pickupOrder == resource.data.pickupOrder &&
+            request.resource.data.pickupName == resource.data.pickupName &&
+            request.resource.data.pickupAddress == resource.data.pickupAddress &&
+            request.resource.data.pickupLatitude == resource.data.pickupLatitude &&
+            request.resource.data.pickupLongitude == resource.data.pickupLongitude &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'readyAt', 'reachedPickupAt', 'pickedUpAt',
+              'boardedAt', 'droppedAt', 'waitingDurationSeconds',
+              'pickupDelaySeconds', 'skipReason', 'tripCancellationReason',
+              'tripCancelledAt', 'updatedAt'
+            ]) &&
+            validRiderTransition(resource.data.status, request.resource.data.status)
+          ) ||
+          (
+            signedIn() &&
+            riderId == request.auth.uid &&
+            resource.data.employeeId == request.auth.uid &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status', 'updatedAt'
+            ]) &&
+            (
+              (resource.data.status == 'assigned' &&
+                request.resource.data.status == 'travelling_to_pickup') ||
+              (resource.data.status == 'travelling_to_pickup' &&
+                request.resource.data.status == 'ready') ||
+              resource.data.status == request.resource.data.status
+            )
+          );
+        allow delete: if isManagerOrAdmin();
+      }
+
+      match /passenger_progress/{employeeId} {
+        allow read: if isManagerOrAdmin() ||
+          (
+            isCabDriver() &&
+            get(/databases/$(database)/documents/cab_trips/$(tripId)).data.driverId == request.auth.uid
+          ) ||
+          (
+            signedIn() &&
+            employeeId == request.auth.uid &&
+            resource.data.employeeId == request.auth.uid
+          );
+        allow create: if (
+            isManagerOrAdmin() ||
+            (
+              isCabDriver() &&
+              getAfter(/databases/$(database)/documents/cab_trips/$(tripId)).data.driverId == request.auth.uid &&
+              request.resource.data.employeeId == employeeId &&
+              employeeId in getAfter(/databases/$(database)/documents/cab_trips/$(tripId)).data.employeeIds &&
+              existsAfter(/databases/$(database)/documents/cab_trips/$(tripId)/riders/$(employeeId))
+            ) ||
+            (
+              isSelf(employeeId) &&
+              request.resource.data.employeeId == employeeId &&
+              assignmentExists(get(/databases/$(database)/documents/cab_trips/$(tripId)).data.assignmentId)
+            )
+          ) &&
+          request.resource.data.keys().hasOnly([
+            'employeeId', 'passengerDisplayName', 'employeeCode', 'roleLabel',
+            'pickupSequence', 'status', 'remark', 'attendanceActive',
+            'transportActive', 'distanceToPickupMeters',
+            'estimatedReadyMinutes', 'locationFreshness', 'updatedAt'
+          ]);
+        allow update: if (
+            isManagerOrAdmin() ||
+            (
+              isCabDriver() &&
+              getAfter(/databases/$(database)/documents/cab_trips/$(tripId)).data.driverId == request.auth.uid &&
+              request.resource.data.employeeId == resource.data.employeeId &&
+              request.resource.data.employeeId == employeeId &&
+              employeeId in getAfter(/databases/$(database)/documents/cab_trips/$(tripId)).data.employeeIds &&
+              validProgressTransition(resource.data.status, request.resource.data.status)
+            ) ||
+            (
+              isSelf(employeeId) &&
+              resource.data.employeeId == employeeId &&
+              request.resource.data.employeeId == employeeId &&
+              request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'status', 'remark', 'attendanceActive', 'transportActive',
+                'distanceToPickupMeters', 'estimatedReadyMinutes',
+                'locationFreshness', 'updatedAt'
+              ]) &&
+              request.resource.data.status in [
+                'travelling_to_pickup', 'near_pickup', 'ready', 'waiting',
+                'go_to_pickup', 'on_the_way', 'running_late', 'not_coming'
+              ] &&
+              (!('remark' in request.resource.data) ||
+                request.resource.data.remark in [
+                  '', 'waiting', 'go_to_pickup', 'on_the_way', 'ready',
+                  'running_late', 'not_coming'
+                ])
+            )
+          ) &&
+          request.resource.data.keys().hasOnly([
+            'employeeId', 'passengerDisplayName', 'employeeCode', 'roleLabel',
+            'pickupSequence', 'status', 'remark', 'attendanceActive',
+            'transportActive', 'distanceToPickupMeters',
+            'estimatedReadyMinutes', 'locationFreshness', 'updatedAt'
+          ]);
+        allow delete: if isManagerOrAdmin();
+      }
+
+      match /events/{eventId} {
+        allow read: if isManagerOrAdmin() ||
+          (
+            isCabDriver() &&
+            get(/databases/$(database)/documents/cab_trips/$(tripId)).data.driverId == request.auth.uid
+          ) ||
+          (
+            signedIn() &&
+            request.auth.uid in get(/databases/$(database)/documents/cab_trips/$(tripId)).data.employeeIds
+          );
+        allow create: if isManagerOrAdmin() ||
+          (
+            isCabDriver() &&
+            request.resource.data.keys().hasOnly([
+              'tripId', 'assignmentId', 'actorUserId', 'eventType',
+              'message', 'createdAt', 'metadata'
+            ]) &&
+            request.resource.data.tripId == tripId &&
+            request.resource.data.actorUserId == request.auth.uid &&
+            request.resource.data.createdAt is timestamp &&
+            getAfter(/databases/$(database)/documents/cab_trips/$(tripId)).data.driverId == request.auth.uid &&
+            getAfter(/databases/$(database)/documents/cab_trips/$(tripId)).data.assignmentId == request.resource.data.assignmentId
+          );
+        allow update, delete: if false;
+      }
+    }  }
+}

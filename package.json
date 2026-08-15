@@ -1,0 +1,14 @@
+{
+  "name": "officeroute-firestore-rules-tests",
+  "version": "1.0.0",
+  "description": "Firestore Emulator Security Rules Unit Tests for OfficeRoute",
+  "main": "test/firestore_rules/firestore_rules.test.js",
+  "scripts": {
+    "test": "node node_modules/mocha/bin/mocha.js test/firestore_rules/*.test.js --timeout 30000 --exit"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.3",
+    "chai": "^4.3.10",
+    "mocha": "^10.2.0"
+  }
+}

@@ -12,6 +12,20 @@ class PassengerProgressService {
     'travelling_to_pickup',
     'near_pickup',
     'ready',
+    'waiting',
+    'go_to_pickup',
+    'on_the_way',
+    'running_late',
+    'not_coming',
+  };
+
+  static const Set<String> employeeRemarks = {
+    'waiting',
+    'go_to_pickup',
+    'on_the_way',
+    'ready',
+    'running_late',
+    'not_coming',
   };
 
   static const Set<String> driverWritableStatuses = {
@@ -32,7 +46,8 @@ class PassengerProgressService {
         .collection('passenger_progress');
   }
 
-  /// Watches all passenger progress documents for a given trip.
+  /// Watches all passenger progress documents for a given trip. Admin/Driver
+  /// surfaces use this only where Firestore rules authorize trip-wide access.
   static Stream<List<PassengerProgressModel>> watchPassengerProgress(
     String tripId,
   ) {
@@ -45,6 +60,24 @@ class PassengerProgressService {
           .toList();
       list.sort((a, b) => a.pickupSequence.compareTo(b.pickupSequence));
       return list;
+    });
+  }
+
+  /// Watches only one Employee's privacy-safe progress document.
+  static Stream<List<PassengerProgressModel>> watchOwnPassengerProgress(
+    String tripId,
+    String employeeId,
+  ) {
+    if (tripId.isEmpty || employeeId.isEmpty) {
+      throw ArgumentError('tripId and employeeId cannot be empty');
+    }
+    return _progressCollection(tripId).doc(employeeId).snapshots().map((doc) {
+      final data = doc.data();
+      return data == null
+          ? const <PassengerProgressModel>[]
+          : <PassengerProgressModel>[
+              PassengerProgressModel.fromMap(data, id: doc.id),
+            ];
     });
   }
 
@@ -74,5 +107,24 @@ class PassengerProgressService {
     await _progressCollection(
       tripId,
     ).doc(progress.employeeId).set(progress.toMap(), SetOptions(merge: true));
+  }
+
+  static Future<void> updateOwnRemark(
+    String tripId,
+    String employeeId,
+    String remark,
+  ) async {
+    if (tripId.isEmpty || employeeId.isEmpty) {
+      throw ArgumentError('tripId and employeeId cannot be empty');
+    }
+    if (!employeeRemarks.contains(remark) || remark == 'ready') {
+      throw ArgumentError('Invalid direct employee remark "$remark"');
+    }
+    await _progressCollection(tripId).doc(employeeId).update({
+      'status': remark,
+      'remark': remark,
+      'transportActive': remark != 'not_coming',
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 }

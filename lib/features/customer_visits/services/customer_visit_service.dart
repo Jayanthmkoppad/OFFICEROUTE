@@ -66,15 +66,24 @@ class CustomerVisitService {
           .where('createdAt', isLessThan: Timestamp.fromDate(end))
           .get();
       final startedFuture = _collection
-          .where('checkInTime', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+          .where(
+            'checkInTime',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(start),
+          )
           .where('checkInTime', isLessThan: Timestamp.fromDate(end))
           .get();
       final checkedOutFuture = _collection
-          .where('checkOutTime', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+          .where(
+            'checkOutTime',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(start),
+          )
           .where('checkOutTime', isLessThan: Timestamp.fromDate(end))
           .get();
       final completedFuture = _collection
-          .where('completedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
+          .where(
+            'completedAt',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(start),
+          )
           .where('completedAt', isLessThan: Timestamp.fromDate(end))
           .get();
       final snapshotFutures = <Future<QuerySnapshot<Map<String, dynamic>>>>[
@@ -84,9 +93,8 @@ class CustomerVisitService {
         completedFuture,
       ];
       final now = DateTime.now();
-      final isToday = day.year == now.year &&
-          day.month == now.month &&
-          day.day == now.day;
+      final isToday =
+          day.year == now.year && day.month == now.month && day.day == now.day;
       if (isToday) {
         snapshotFutures.add(
           _collection.where('status', isEqualTo: 'checked_in').get(),
@@ -273,7 +281,9 @@ class CustomerVisitService {
     }
   }
 
-  static Future<CustomerVisitModel> updateVisit(CustomerVisitModel visit) async {
+  static Future<CustomerVisitModel> updateVisit(
+    CustomerVisitModel visit,
+  ) async {
     try {
       final updatedVisit = visit.copyWith(updatedAt: DateTime.now());
       await _collection.doc(visit.id).update(updatedVisit.toMap());

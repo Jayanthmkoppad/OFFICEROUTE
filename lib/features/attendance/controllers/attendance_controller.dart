@@ -86,8 +86,9 @@ class AttendanceController {
   ) async {
     final employeesFuture = EmployeeService.fetchAllEmployees();
     final attendanceFuture = AttendanceService.fetchAttendanceForDate(day);
-    final visitsFuture =
-        CustomerVisitService.fetchOperationalVisitsForDate(day);
+    final visitsFuture = CustomerVisitService.fetchOperationalVisitsForDate(
+      day,
+    );
 
     final employees = await employeesFuture;
     final attendance = await attendanceFuture;
@@ -110,22 +111,23 @@ class AttendanceController {
       visitsByUser.putIfAbsent(visit.userId, () => []).add(visit);
     }
 
-    final summaries = employees
-        .map(
-          (employee) => ManagerEmployeeSummaryModel(
-            employee: employee,
-            todayAttendance: attendanceByUser[employee.uid],
-            visits: List<CustomerVisitModel>.unmodifiable(
-              visitsByUser[employee.uid] ?? const <CustomerVisitModel>[],
-            ),
-          ),
-        )
-        .toList(growable: false)
-      ..sort(
-        (a, b) => a.employee.name.toLowerCase().compareTo(
+    final summaries =
+        employees
+            .map(
+              (employee) => ManagerEmployeeSummaryModel(
+                employee: employee,
+                todayAttendance: attendanceByUser[employee.uid],
+                visits: List<CustomerVisitModel>.unmodifiable(
+                  visitsByUser[employee.uid] ?? const <CustomerVisitModel>[],
+                ),
+              ),
+            )
+            .toList(growable: false)
+          ..sort(
+            (a, b) => a.employee.name.toLowerCase().compareTo(
               b.employee.name.toLowerCase(),
             ),
-      );
+          );
 
     return (
       employees: summaries,
@@ -135,9 +137,7 @@ class AttendanceController {
   }
 
   /// Loads organization attendance for a calendar month using a date range.
-  static Future<List<AttendanceModel>> loadOperationsForMonth(
-    DateTime month,
-  ) {
+  static Future<List<AttendanceModel>> loadOperationsForMonth(DateTime month) {
     final start = DateTime(month.year, month.month);
     final end = DateTime(month.year, month.month + 1);
     return AttendanceService.fetchAttendanceForRange(start: start, end: end);

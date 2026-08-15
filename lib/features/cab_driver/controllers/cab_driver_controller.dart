@@ -12,8 +12,8 @@ import '../../../core/models/cab_trip_rider_model.dart';
 import '../../../core/models/cab_vehicle_model.dart';
 import '../../../core/models/live_location_model.dart';
 import '../../../core/models/location_history_point_model.dart';
+import '../../../core/models/office_destination.dart';
 import '../../../core/models/user_model.dart';
-import '../../../core/models/employee_model.dart';
 import '../../../core/services/cab_assignment_service.dart';
 import '../../../core/services/cab_driver_shift_service.dart';
 import '../../../core/services/cab_trip_service.dart';
@@ -21,13 +21,11 @@ import '../../../core/services/firestore_service.dart';
 import '../../../core/services/live_location_service.dart';
 import '../../../core/services/location_history_service.dart';
 import '../../../core/services/location_tracking_policy.dart';
-import '../../attendance/controllers/attendance_controller.dart';
 import '../../auth/services/auth_service.dart';
 import '../../cab_tracking/controllers/cab_tracking_controller.dart';
 import '../../map/controllers/location_controller.dart';
 import '../../notifications/services/notification_service.dart';
-import '../../attendance/services/attendance_service.dart';
-import '../../../core/services/employee_service.dart';
+import '../../../core/services/shared_map_presence_service.dart';
 
 class CabDriverOperations {
   final UserModel driver;
@@ -44,6 +42,12 @@ class CabDriverOperations {
   final Map<String, LiveLocationModel> locations;
   final DateTime loadedAt;
 
+  final List<CabAssignmentMemberModel> openRequests;
+  final String? openRequestsError;
+  final String? directoryErrorCode;
+  final List<UserModel> eligibleEmployees;
+  final List<CabAssignmentMemberModel> invitations;
+
   const CabDriverOperations({
     required this.driver,
     required this.todayAssignment,
@@ -58,9 +62,47 @@ class CabDriverOperations {
     required this.employees,
     required this.locations,
     required this.loadedAt,
+    this.openRequests = const [],
+    this.openRequestsError,
+    this.directoryErrorCode,
+    this.eligibleEmployees = const [],
+    this.invitations = const [],
   });
 
   bool get dutyActive => shift?.shiftStatus == 'active';
+
+  OfficeDestination? get officeDestination =>
+      OfficeDestination.fromShift(shift) ??
+      OfficeDestination.fromDriver(driver);
+
+  bool get hasValidOfficeDestination => officeDestination != null;
+
+  CabDriverWorkflowState get workflowState {
+    if (!dutyActive) return CabDriverWorkflowState.offDuty;
+    final trip = activeTrip;
+    if (trip == null) {
+      final shiftStart = shift?.shiftStart;
+      final completedDuringShift = trips.any(
+        (item) =>
+            item.status == 'completed' &&
+            item.completedAt != null &&
+            (shiftStart == null || !item.completedAt!.isBefore(shiftStart)),
+      );
+      return completedDuringShift
+          ? CabDriverWorkflowState.tripCompleted
+          : CabDriverWorkflowState.onDuty;
+    }
+    if (trip.status == 'created') return CabDriverWorkflowState.tripReady;
+    if (trip.status == 'office_arrived') {
+      return CabDriverWorkflowState.tripCompleted;
+    }
+    final rider = activeRider;
+    if (rider == null) return CabDriverWorkflowState.travellingToOffice;
+    if (rider.status == 'waiting') {
+      return CabDriverWorkflowState.waitingAtPickup;
+    }
+    return CabDriverWorkflowState.travellingToPickup;
+  }
 
   CabTripRiderModel? get activeRider {
     final pending =
@@ -94,8 +136,25 @@ class CabDriverOperations {
   }
 }
 
+enum CabDriverWorkflowState {
+  offDuty,
+  startingDuty,
+  onDuty,
+  preparingTrip,
+  tripReady,
+  travellingToPickup,
+  arrivedAtPickup,
+  waitingAtPickup,
+  passengerPickedUp,
+  travellingToNextPickup,
+  travellingToOffice,
+  tripCompleted,
+  endingDuty,
+  error,
+}
+
 class CabDriverController {
-  CabDriverController._();
+  const CabDriverController();
 
   static const arrivalThresholdMeters = 500.0;
   static StreamSubscription<LiveLocationModel>? _locationSubscription;
@@ -111,9 +170,111 @@ class CabDriverController {
     return uid;
   }
 
+  static bool canStartTrip(CabDriverOperations data) {
+    final location = data.locations[data.driver.uid];
+    final online =
+        location != null &&
+        location.status != LocationTrackingPolicy.statusOffline &&
+        location.syncStatus != 'pending';
+    return data.dutyActive &&
+        data.vehicle != null &&
+        data.vehicle!.id.trim().isNotEmpty &&
+        data.hasValidOfficeDestination &&
+        data.activeTrip == null &&
+        data.openRequestsError == null &&
+        data.invitations.any(
+          (invitation) => invitation.invitationStatus == 'accepted',
+        ) &&
+        data.invitations
+            .where((invitation) => invitation.invitationStatus == 'accepted')
+            .every(
+              (request) =>
+                  request.driverId == data.driver.uid &&
+                  request.status == 'accepted' &&
+                  request.pickupAddress.trim().isNotEmpty &&
+                  request.pickupLatitude != null &&
+                  request.pickupLongitude != null,
+            ) &&
+        online;
+  }
+
+  static String? startTripBlockedReason(CabDriverOperations data) {
+    if (!data.dutyActive) return 'Start duty first';
+    if (data.vehicle == null || data.vehicle!.id.trim().isEmpty) {
+      return 'Selected cab is unavailable';
+    }
+    if (!data.hasValidOfficeDestination) {
+      return "Today's office destination is not configured";
+    }
+    if (data.activeTrip != null) return 'A trip is already active';
+    if (data.openRequestsError != null) return data.openRequestsError;
+    final accepted = data.invitations
+        .where((item) => item.invitationStatus == 'accepted')
+        .toList(growable: false);
+    if (accepted.isEmpty) {
+      return 'Waiting for at least one Employee to accept';
+    }
+    final missingPickup = accepted.where((item) {
+      final latitude = item.pickupLatitude;
+      final longitude = item.pickupLongitude;
+      return item.pickupAddress.trim().isEmpty ||
+          latitude == null ||
+          longitude == null ||
+          !latitude.isFinite ||
+          !longitude.isFinite ||
+          latitude < -90 ||
+          latitude > 90 ||
+          longitude < -180 ||
+          longitude > 180;
+    }).length;
+    if (missingPickup > 0) {
+      return '$missingPickup accepted Employee(s) still need a pickup location';
+    }
+    final location = data.locations[data.driver.uid];
+    if (location == null ||
+        location.status == LocationTrackingPolicy.statusOffline ||
+        location.syncStatus == 'pending') {
+      return 'Enable Driver location to start the trip';
+    }
+    return null;
+  }
+
+  static bool isEmployeeInAuthorizedScope({
+    required UserModel driver,
+    required UserModel employee,
+  }) {
+    if (employee.uid.isEmpty ||
+        employee.uid == driver.uid ||
+        employee.role.trim().toLowerCase() != 'employee') {
+      return false;
+    }
+    final sameBranch =
+        driver.branch.trim().isNotEmpty &&
+        employee.branch.trim() == driver.branch.trim();
+    final sameServiceCentre =
+        driver.serviceCentre.trim().isNotEmpty &&
+        employee.serviceCentre.trim() == driver.serviceCentre.trim();
+    return sameBranch || sameServiceCentre;
+  }
+
+  static List<UserModel> filterEligibleEmployees({
+    required UserModel driver,
+    required Iterable<UserModel> candidates,
+  }) {
+    final byId = <String, UserModel>{};
+    for (final employee in candidates) {
+      if (isEmployeeInAuthorizedScope(driver: driver, employee: employee)) {
+        byId[employee.uid] = employee;
+      }
+    }
+    return byId.values.toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+  }
+
   static Future<CabDriverOperations> load() async {
     final uid = _uid;
-    final today = dateKey(DateTime.now());
+    final now = DateTime.now();
+    final today = dateKey(now);
     final driver = await FirestoreService.getUser(uid);
     if (driver == null) throw StateError('Driver profile was not found.');
     final assignments = await CabManagementController.loadAssignmentsForDriver(
@@ -139,23 +300,94 @@ class CabDriverController {
         )
         .firstOrNull;
     CabVehicleModel? vehicle;
-    if (todayAssignment != null) {
-      final vehicleId = todayAssignment.vehicleId.trim();
-      if (vehicleId.isNotEmpty) {
-        vehicle =
-            await CabManagementController.getVehicle(vehicleId) ??
-            CabVehicleModel(
-              id: vehicleId,
-              vehicleNumber: vehicleId,
-              vehicleModel: 'Office Cab',
-              registrationNumber: vehicleId,
-              capacity: 4,
-              status: 'available',
-              driverId: uid,
-              remarks: 'Operational fallback cab.',
-            );
-      }
+    final preferredVehicleId = shift?.vehicleId.trim().isNotEmpty == true
+        ? shift!.vehicleId.trim()
+        : (todayAssignment?.vehicleId.trim().isNotEmpty == true
+              ? todayAssignment!.vehicleId.trim()
+              : driver.vehicleNumber.trim());
+    if (preferredVehicleId.isNotEmpty) {
+      vehicle = await CabManagementController.getVehicle(preferredVehicleId);
     }
+
+    List<CabAssignmentMemberModel> invitations = const [];
+    List<UserModel> eligibleEmployees = const [];
+    String? openRequestsError;
+    String? directoryErrorCode;
+    try {
+      final normalizedDriverRole = driver.role.trim().toLowerCase().replaceAll(
+        ' ',
+        '_',
+      );
+      if (!const {'cab_driver', 'driver'}.contains(normalizedDriverRole)) {
+        throw StateError('driver_role_mismatch');
+      }
+      final scopes = <(String, String)>[
+        if (driver.branch.trim().isNotEmpty) ('branch', driver.branch.trim()),
+        if (driver.serviceCentre.trim().isNotEmpty)
+          ('serviceCentre', driver.serviceCentre.trim()),
+      ];
+      if (scopes.isEmpty) throw StateError('driver_scope_missing');
+      final employeeSnapshots = await Future.wait([
+        for (final scope in scopes)
+          for (final roleValue in const ['employee', 'Employee', 'EMPLOYEE'])
+            FirebaseFirestore.instance
+                .collection('users')
+                .where('role', isEqualTo: roleValue)
+                .where(scope.$1, isEqualTo: scope.$2)
+                .get(),
+      ]);
+      final employeesById = <String, UserModel>{};
+      for (final snapshot in employeeSnapshots) {
+        for (final document in snapshot.docs) {
+          final employee = UserModel.fromMap(document.data());
+          if (employee.uid.isNotEmpty &&
+              employee.uid != uid &&
+              employee.role.trim().toLowerCase() == 'employee') {
+            employeesById[employee.uid] = employee;
+          }
+        }
+      }
+      eligibleEmployees = employeesById.values.toList(growable: false)
+        ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+      final invitationSnapshot = await FirebaseFirestore.instance
+          .collection('cab_assignment_members')
+          .where('dateKey', isEqualTo: today)
+          .where('driverId', isEqualTo: uid)
+          .get();
+      invitations = invitationSnapshot.docs
+          .map(
+            (doc) => CabAssignmentMemberModel.fromMap(doc.data(), id: doc.id),
+          )
+          .where(
+            (member) =>
+                member.role == 'employee' &&
+                member.driverId == uid &&
+                member.shiftId == shift?.id,
+          )
+          .toList(growable: false);
+    } on FirebaseException catch (error) {
+      directoryErrorCode = error.code;
+      openRequestsError = error.code == 'permission-denied'
+          ? 'Your Driver account does not have permission to view this Employee directory'
+          : 'Unable to load Employees';
+      directoryErrorCode = error.code;
+    } on StateError catch (error) {
+      final reason = error.message.toString();
+      directoryErrorCode = reason;
+      openRequestsError = reason == 'driver_scope_missing'
+          ? 'Driver branch/service centre is not configured'
+          : reason == 'driver_role_mismatch'
+          ? 'Authenticated Firebase user is not a Cab Driver'
+          : 'Unable to load Employees';
+    } catch (error) {
+      directoryErrorCode = 'unknown';
+      openRequestsError = 'Unable to load Employees';
+    }
+    final openRequests = invitations
+        .where((invitation) => invitation.invitationStatus == 'accepted')
+        .toList(growable: false);
+
     final members = todayAssignment == null
         ? const <CabAssignmentMemberModel>[]
         : await CabManagementController.loadAssignmentMembers(
@@ -168,10 +400,13 @@ class CabDriverController {
     final events = activeTrip == null
         ? const <CabTripEventModel>[]
         : await CabManagementController.loadTripEvents(activeTrip.id);
-    final employeeIds = members
-        .where((member) => member.role == 'employee')
-        .map((member) => member.userId)
-        .toList();
+    final employeeIds = <String>{
+      ...eligibleEmployees.map((employee) => employee.uid),
+      ...invitations.map((member) => member.userId),
+      ...members
+          .where((member) => member.userId != uid && member.role != 'driver')
+          .map((member) => member.userId),
+    }.toList(growable: false);
     final users = await FirestoreService.fetchUsersByIds(employeeIds);
     final locations = <String, LiveLocationModel>{};
     for (final userId in <String>{uid, ...employeeIds}) {
@@ -192,6 +427,11 @@ class CabDriverController {
       employees: {for (final user in users) user.uid: user},
       locations: locations,
       loadedAt: DateTime.now(),
+      openRequests: openRequests,
+      openRequestsError: openRequestsError,
+      directoryErrorCode: directoryErrorCode,
+      eligibleEmployees: eligibleEmployees,
+      invitations: invitations,
     );
   }
 
@@ -203,7 +443,10 @@ class CabDriverController {
       CabAssignmentService.watchDriverAssignment(driverId: uid, dateKey: today),
       CabTripService.watchTripsForDriver(uid),
       CabDriverShiftService.watchShiftsForDriver(uid),
-      LiveLocationService.watchLiveLocationChanges(),
+      CabAssignmentService.watchInvitationsForDriver(
+        driverId: uid,
+        dateKey: today,
+      ),
     ];
   }
 
@@ -211,61 +454,19 @@ class CabDriverController {
     CabDriverOperations data,
   ) async {
     if (data.todayAssignment != null) return data.todayAssignment!;
-
-    final now = DateTime.now();
-    final assignment = CabAssignmentModel(
-      dateKey: dateKey(now),
-      assignmentDate: now,
-      driverId: data.driver.uid,
-      vehicleId: data.vehicle?.id ?? '',
-      employeeIds: const <String>[],
-      officeName: data.driver.branch.isNotEmpty ? data.driver.branch : 'Office',
-      officeAddress: '',
-      officeLatitude: null,
-      officeLongitude: null,
-      status: 'active',
-      assignedBy: data.driver.uid,
-      assignedAt: now,
-      updatedAt: now,
+    throw StateError(
+      'No claimed assignment exists. Select READY requests and start the trip first.',
     );
-
-    final assignmentId = await CabManagementController.createAssignment(
-      assignment,
-    );
-    final created = assignment.copyWith(id: assignmentId);
-    await CabManagementController.upsertAssignmentMembers([
-      CabAssignmentMemberModel(
-        id: '${created.dateKey}_${data.driver.uid}',
-        assignmentId: created.id,
-        dateKey: created.dateKey,
-        userId: data.driver.uid,
-        role: 'driver',
-        driverId: data.driver.uid,
-        vehicleId: created.vehicleId,
-        status: 'active',
-        createdAt: now,
-        updatedAt: now,
-      ),
-    ]);
-    return created;
   }
 
-  static Future<List<EmployeeModel>> _fetchEligiblePickupEmployees() async {
-    final today = DateTime.now();
-    final attendanceRecords = await AttendanceService.fetchAttendanceForDate(
-      today,
-    );
-    final activeUserIds = attendanceRecords
-        .where((record) => record.isCheckedIn)
-        .map((record) => record.userId)
-        .toSet();
-    final employees = await EmployeeService.fetchAllEmployees();
-    return employees
-        .where((employee) => activeUserIds.contains(employee.uid))
-        .toList();
-  }
-
-  static Future<void> startDuty(CabDriverOperations data) async {
+  static Future<void> startDuty(
+    CabDriverOperations data, {
+    String? vehicleId,
+    double startOdometer = 0.0,
+    int batteryPercentage = 100,
+    String vehicleCondition = 'Good',
+    required OfficeDestination officeDestination,
+  }) async {
     if (data.dutyActive) return;
     final permission = await LocationController.checkLocationPermission();
     if (!permission.canUseLocation) {
@@ -274,15 +475,25 @@ class CabDriverController {
         throw StateError('Location permission is required to start duty.');
       }
     }
-    await AttendanceController.checkIn();
-    final assignment = await _ensureTodayAssignment(data);
+    final today = dateKey(DateTime.now());
+    final effectiveVehicleId =
+        (vehicleId != null && vehicleId.trim().isNotEmpty)
+        ? vehicleId.trim()
+        : (data.vehicle?.id ?? '');
     await CabManagementController.createShift(
       CabDriverShiftModel(
         driverId: data.driver.uid,
-        vehicleId: assignment.vehicleId,
-        shiftDate: assignment.dateKey,
+        vehicleId: effectiveVehicleId,
+        shiftDate: today,
         shiftStart: DateTime.now(),
         shiftStatus: 'active',
+        startOdometer: startOdometer,
+        batteryPercentage: batteryPercentage,
+        vehicleCondition: vehicleCondition,
+        officeName: officeDestination.name,
+        officeAddress: officeDestination.address,
+        officeLatitude: officeDestination.latitude,
+        officeLongitude: officeDestination.longitude,
       ),
     );
     var session = await LocationController.loadActiveLocationSession(
@@ -292,7 +503,7 @@ class CabDriverController {
       session = await LocationController.startLocationSession(
         userId: data.driver.uid,
         trackingReason: LocationTrackingPolicy.reasonFieldDuty,
-        metadata: {'assignmentId': assignment.id},
+        metadata: {'vehicleId': effectiveVehicleId},
       );
     } else if (session.trackingReason !=
         LocationTrackingPolicy.reasonFieldDuty) {
@@ -311,7 +522,6 @@ class CabDriverController {
     if (data.activeTrip != null) {
       throw StateError('Complete the current trip before ending duty.');
     }
-    await AttendanceController.checkOut();
     await CabManagementController.updateShift(
       CabDriverShiftModel(
         id: shift.id,
@@ -327,8 +537,22 @@ class CabDriverController {
         totalTrips: shift.totalTrips,
         totalEmployees: shift.totalEmployees,
         remarks: shift.remarks,
+        startOdometer: shift.startOdometer,
+        batteryPercentage: shift.batteryPercentage,
+        vehicleCondition: shift.vehicleCondition,
       ),
     );
+    final session = await LocationController.loadActiveLocationSession(
+      data.driver.uid,
+    );
+    if (session != null) {
+      await LocationController.stopLocationSession(
+        session: session,
+        stopReason: 'driver_duty_ended',
+      );
+    }
+    await _locationSubscription?.cancel();
+    _locationSubscription = null;
   }
 
   static Future<void> startOrResumeTrip(CabDriverOperations data) async {
@@ -340,15 +564,70 @@ class CabDriverController {
       throw StateError('No driver assignment exists for today.');
     }
     var employeeIds = data.members
-        .where((member) => member.role == 'employee')
+        .where(
+          (member) =>
+              member.userId != data.driver.uid && member.role != 'driver',
+        )
         .map((member) => member.userId)
         .toList();
     if (employeeIds.isEmpty) {
-      employeeIds = (await _fetchEligiblePickupEmployees())
-          .map((employee) => employee.uid)
-          .toList();
+      throw StateError(
+        'No claimed pickup requests are available. Refresh Driver requests and try again.',
+      );
     }
     await startTripWithEmployees(data, employeeIds);
+  }
+
+  static Future<void> releaseSession(CabDriverOperations data) async {
+    await _locationSubscription?.cancel();
+    _locationSubscription = null;
+    final session = await LocationController.loadActiveLocationSession(
+      data.driver.uid,
+    );
+    if (session != null) {
+      await LocationController.stopLocationSession(
+        session: session,
+        stopReason: 'driver_signed_out',
+      );
+    }
+    await LiveLocationService.markOffline(
+      userId: data.driver.uid,
+      sessionId: session?.id ?? '',
+      assignmentId: data.todayAssignment?.id,
+      trackingReason:
+          session?.trackingReason ?? LocationTrackingPolicy.reasonFieldDuty,
+    );
+    await SharedMapPresenceService.markOffline(data.driver.uid);
+  }
+
+  static Future<void> sendTransportInvitations(
+    CabDriverOperations data,
+    List<String> employeeIds,
+  ) async {
+    if (!data.dutyActive || data.shift == null) {
+      throw StateError('Start duty before sending invitations.');
+    }
+    final vehicleId = data.vehicle?.id.trim() ?? '';
+    final destination = data.officeDestination;
+    if (vehicleId.isEmpty || destination == null) {
+      throw StateError('Cab and office destination are required.');
+    }
+    final selected = data.eligibleEmployees
+        .where((employee) => employeeIds.contains(employee.uid))
+        .toList(growable: false);
+    if (selected.length != employeeIds.toSet().length) {
+      throw StateError('One or more Employees are no longer eligible.');
+    }
+    await CabAssignmentService.sendTransportInvitations(
+      driverId: data.driver.uid,
+      vehicleId: vehicleId,
+      shiftId: data.shift!.id,
+      dateKey: dateKey(DateTime.now()),
+      branch: data.driver.branch,
+      serviceCentre: data.driver.serviceCentre,
+      destination: destination,
+      employees: selected,
+    );
   }
 
   static Future<void> startTripWithEmployees(
@@ -357,6 +636,57 @@ class CabDriverController {
   ) async {
     if (!data.dutyActive) {
       throw StateError('Start duty before starting a trip.');
+    }
+    if (data.todayAssignment == null) {
+      final selectedIds = data.invitations
+          .where(
+            (invitation) =>
+                employeeIds.contains(invitation.userId) &&
+                invitation.invitationStatus == 'accepted' &&
+                invitation.status == 'accepted',
+          )
+          .map((invitation) => invitation.id)
+          .toList(growable: false);
+      if (selectedIds.length != employeeIds.toSet().length) {
+        throw StateError(
+          'One or more accepted invitations are no longer eligible.',
+        );
+      }
+      final destination = data.officeDestination;
+      final vehicleId = data.vehicle?.id.trim() ?? '';
+      if (destination == null || vehicleId.isEmpty) {
+        throw StateError('Office destination or vehicle is not configured.');
+      }
+      final today = dateKey(DateTime.now());
+      final assignmentId = 'plan_${today}_${data.driver.uid}';
+      final session = await CabTrackingController.startDriverSession(
+        driverId: data.driver.uid,
+        assignmentId: assignmentId,
+      );
+      try {
+        await CabAssignmentService.claimMembersAndCreateTripTransaction(
+          driverId: data.driver.uid,
+          vehicleId: vehicleId,
+          dateKey: today,
+          memberIds: selectedIds,
+          officeName: destination.name,
+          officeAddress: destination.address,
+          officeLatitude: destination.latitude,
+          officeLongitude: destination.longitude,
+          branch: data.driver.branch,
+          serviceCentre: data.driver.serviceCentre,
+          activeLocationSessionId: session.id,
+        );
+        await _locationSubscription?.cancel();
+        _locationSubscription =
+            await CabTrackingController.startDriverLiveLocationUpdates(
+              session: session,
+            );
+      } catch (_) {
+        await CabTrackingController.stopDriverSession(session: session);
+        rethrow;
+      }
+      return;
     }
     final assignment = await _ensureTodayAssignment(data);
     if (assignment.driverId != data.driver.uid) {
@@ -378,7 +708,12 @@ class CabDriverController {
           session: session,
         );
     final now = DateTime.now();
-    final trip = data.activeTrip == null
+    final existingTrip =
+        data.activeTrip ??
+        await CabTripService.fetchActiveTripForAssignment(
+          assignmentId: assignment.id,
+        );
+    final trip = existingTrip == null
         ? await CabManagementController.createTrip(
             CabTripModel(
               assignmentId: assignment.id,
@@ -393,10 +728,10 @@ class CabDriverController {
             ),
           )
         : await CabManagementController.updateTrip(
-            data.activeTrip!.copyWith(
+            existingTrip.copyWith(
               status: 'active',
               activeLocationSessionId: session.id,
-              startedAt: data.activeTrip!.startedAt ?? now,
+              startedAt: existingTrip.startedAt ?? now,
               updatedAt: now,
             ),
           );
@@ -473,6 +808,8 @@ class CabDriverController {
       'Cab reached',
       'Your cab has reached the pickup point.',
       'cab_reached',
+      trip: trip,
+      driverId: data.driver.uid,
     );
   }
 
@@ -512,6 +849,8 @@ class CabDriverController {
       'Picked up',
       'Your pickup has been confirmed.',
       'cab_picked_up',
+      trip: trip,
+      driverId: data.driver.uid,
     );
     if (waiting > 300) {
       await _notify(
@@ -550,6 +889,8 @@ class CabDriverController {
         'Dropped',
         'You have reached ${assignment.officeName}.',
         'cab_dropped',
+        trip: trip,
+        driverId: data.driver.uid,
       );
     }
     await _event(data, trip, 'destination_reached', 'Cab reached destination.');
@@ -635,6 +976,16 @@ class CabDriverController {
       );
     }
     await _event(data, trip, 'trip_completed', 'Cab trip completed.');
+    for (final rider in data.riders) {
+      await _notify(
+        rider.employeeId,
+        'Trip completed',
+        'Your cab trip is complete.',
+        'cab_trip_completed',
+        trip: trip,
+        driverId: data.driver.uid,
+      );
+    }
     await _notify(
       data.driver.uid,
       'Trip completed',
@@ -741,6 +1092,8 @@ class CabDriverController {
       'Cab is arriving',
       'Your cab is arriving. Please be ready.',
       'cab_arriving',
+      trip: data.activeTrip,
+      driverId: data.driver.uid,
     );
     await _notify(
       data.driver.uid,
@@ -780,14 +1133,19 @@ class CabDriverController {
     String userId,
     String title,
     String body,
-    String type,
-  ) async {
+    String type, {
+    CabTripModel? trip,
+    String driverId = '',
+  }) async {
     if (userId.trim().isEmpty) return;
     await NotificationService.createLocalNotification(
       userId: userId,
       title: title,
       body: body,
       type: type,
+      tripId: trip?.id ?? '',
+      assignmentId: trip?.assignmentId ?? '',
+      driverId: driverId,
     );
   }
 }

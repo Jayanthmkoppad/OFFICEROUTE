@@ -173,10 +173,7 @@ class _CustomerVisitDetailScreenState extends State<CustomerVisitDetailScreen> {
                     () => CustomerVisitController.updateVisit(
                       _visit.copyWith(
                         photoUrls: <String>[..._visit.photoUrls, value],
-                        photoTimelineEvents: <String>[
-                          ...eventLinks,
-                          eventType,
-                        ],
+                        photoTimelineEvents: <String>[...eventLinks, eventType],
                       ),
                     ),
                   );
@@ -680,9 +677,8 @@ class _CustomerVisitDetailScreenState extends State<CustomerVisitDetailScreen> {
     );
     bool videoReady = _visit.videoPlaceholderStatus == 'ready';
     bool signatureReady = _visit.signaturePlaceholderStatus == 'ready';
-    var resolutionStatus = technicalResolutionStatuses.contains(
-      _visit.resolutionStatus,
-    )
+    var resolutionStatus =
+        technicalResolutionStatuses.contains(_visit.resolutionStatus)
         ? _visit.resolutionStatus
         : 'pending';
 
@@ -1094,10 +1090,7 @@ class _VisitTimelineCard extends StatelessWidget {
   final CustomerVisitModel visit;
   final VoidCallback onRecordEvent;
 
-  const _VisitTimelineCard({
-    required this.visit,
-    required this.onRecordEvent,
-  });
+  const _VisitTimelineCard({required this.visit, required this.onRecordEvent});
 
   @override
   Widget build(BuildContext context) {
@@ -1106,7 +1099,9 @@ class _VisitTimelineCard extends StatelessWidget {
         eventType: 'assignment',
         label: 'Assignment',
         time: visit.createdAt,
-        notes: visit.userId.isEmpty ? 'Engineer not assigned' : 'Owner recorded',
+        notes: visit.userId.isEmpty
+            ? 'Engineer not assigned'
+            : 'Owner recorded',
       ),
       for (final event in visit.technicalTimeline)
         _RecordedTimelinePoint(
@@ -1257,10 +1252,7 @@ class _ServiceChecklistCard extends StatelessWidget {
   final CustomerVisitModel visit;
   final VoidCallback onEdit;
 
-  const _ServiceChecklistCard({
-    required this.visit,
-    required this.onEdit,
-  });
+  const _ServiceChecklistCard({required this.visit, required this.onEdit});
 
   @override
   Widget build(BuildContext context) {
@@ -1270,20 +1262,14 @@ class _ServiceChecklistCard extends StatelessWidget {
     final technicalItems = <TechnicalChecklistItem>[
       for (final definition in technicalChecklistDefinitions.entries)
         savedById.remove(definition.key) ??
-            TechnicalChecklistItem(
-              id: definition.key,
-              label: definition.value,
-            ),
+            TechnicalChecklistItem(id: definition.key, label: definition.value),
       ...savedById.values,
     ];
     final evidenceItems = <_ChecklistItem>[
       _ChecklistItem('GPS Check-in', visit.hasGpsCheckIn),
       _ChecklistItem('GPS Checkout', visit.hasGpsCheckOut),
       _ChecklistItem('Photos Uploaded', visit.photoUrls.isNotEmpty),
-      _ChecklistItem(
-        'Video Ready',
-        visit.videoPlaceholderStatus == 'ready',
-      ),
+      _ChecklistItem('Video Ready', visit.videoPlaceholderStatus == 'ready'),
       _ChecklistItem(
         'Technical Attachments',
         visit.technicalAttachments.isNotEmpty,
@@ -1511,9 +1497,7 @@ class _ChecklistTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = item.complete
-        ? AppColors.success
-        : AppColors.warning;
+    final color = item.complete ? AppColors.success : AppColors.warning;
     return Row(
       children: [
         Icon(
@@ -1628,10 +1612,7 @@ class _ServiceDetailsCard extends StatelessWidget {
                 'Controller Serial',
                 visit.controllerSerialNumber,
               ),
-              _TechnicalValue(
-                'Controller Firmware',
-                visit.controllerFirmware,
-              ),
+              _TechnicalValue('Controller Firmware', visit.controllerFirmware),
               _TechnicalValue(
                 'Controller Manufacturing',
                 _optionalDate(visit.controllerManufacturingDate),
@@ -1640,14 +1621,8 @@ class _ServiceDetailsCard extends StatelessWidget {
               _TechnicalValue('Battery Serial', visit.batterySerialNumber),
               _TechnicalValue('Battery Chemistry', visit.batteryChemistry),
               _TechnicalValue('Battery Capacity', visit.batteryCapacity),
-              _TechnicalValue(
-                'Battery Voltage',
-                visit.batteryNominalVoltage,
-              ),
-              _TechnicalValue(
-                'Battery Warranty',
-                visit.batteryWarrantyStatus,
-              ),
+              _TechnicalValue('Battery Voltage', visit.batteryNominalVoltage),
+              _TechnicalValue('Battery Warranty', visit.batteryWarrantyStatus),
               _TechnicalValue('Charger Model', visit.chargerModel),
             ],
           ),
@@ -1660,10 +1635,7 @@ class _ServiceDetailsCard extends StatelessWidget {
                 issues.isEmpty ? '' : issues.join(', '),
               ),
               for (final field in technicalDiagnosticFields)
-                _TechnicalValue(
-                  field.label,
-                  _diagnosticValue(visit, field),
-                ),
+                _TechnicalValue(field.label, _diagnosticValue(visit, field)),
               for (final entry in visit.diagnosticReadings.entries)
                 if (!technicalDiagnosticFields.any(
                   (field) => field.key == entry.key,
@@ -1721,7 +1693,9 @@ class _TechnicalExpansionSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final recorded = children.where((item) => item.value.trim().isNotEmpty).length;
+    final recorded = children
+        .where((item) => item.value.trim().isNotEmpty)
+        .length;
     return Material(
       color: Colors.transparent,
       child: ExpansionTile(
@@ -1860,7 +1834,10 @@ class _DispatchVisitPackageCard extends StatelessWidget {
             icon: Icons.alt_route_outlined,
             children: [
               _TechnicalValue('Assigned Engineer', engineerName),
-              _TechnicalValue('Assigned At', _optionalDateTime(visit.assignedAt)),
+              _TechnicalValue(
+                'Assigned At',
+                _optionalDateTime(visit.assignedAt),
+              ),
               _TechnicalValue(
                 'Preferred Visit',
                 _optionalDate(visit.preferredVisitDate),
@@ -1972,10 +1949,7 @@ class _MediaCard extends StatelessWidget {
   final CustomerVisitModel visit;
   final VoidCallback onAddAttachment;
 
-  const _MediaCard({
-    required this.visit,
-    required this.onAddAttachment,
-  });
+  const _MediaCard({required this.visit, required this.onAddAttachment});
 
   @override
   Widget build(BuildContext context) {
@@ -2011,10 +1985,7 @@ class _MediaCard extends StatelessWidget {
             value: _placeholderLabel(visit.signaturePlaceholderStatus),
           ),
           if (visit.technicalAttachments.isEmpty)
-            const _DetailRow(
-              label: 'Voice Notes / Documents',
-              value: '',
-            )
+            const _DetailRow(label: 'Voice Notes / Documents', value: '')
           else
             ...visit.technicalAttachments.map(
               (attachment) => _DetailRow(
@@ -2146,10 +2117,7 @@ class _SerialHistoryPanel extends StatelessWidget {
   final _SerialHistoryData data;
   final Map<String, EmployeeModel> employeesById;
 
-  const _SerialHistoryPanel({
-    required this.data,
-    required this.employeesById,
-  });
+  const _SerialHistoryPanel({required this.data, required this.employeesById});
 
   @override
   Widget build(BuildContext context) {
@@ -2170,7 +2138,9 @@ class _SerialHistoryPanel extends StatelessWidget {
     }
     final topComplaint = _largestStringCount(complaintFrequency);
     final repaired = visits.where(_isTechnicallyResolved).length;
-    final pending = visits.where((visit) => !_isTechnicallyClosed(visit)).length;
+    final pending = visits
+        .where((visit) => !_isTechnicallyClosed(visit))
+        .length;
     final warrantyHistory = visits
         .map((visit) => _serialWarrantyFor(visit, data.label).trim())
         .where((status) => status.isNotEmpty)
@@ -2178,7 +2148,10 @@ class _SerialHistoryPanel extends StatelessWidget {
         .join(', ');
     final engineers = visits
         .where((visit) => visit.id != data.currentVisitId)
-        .map((visit) => _employeeDisplayName(employeesById[visit.userId], visit.userId))
+        .map(
+          (visit) =>
+              _employeeDisplayName(employeesById[visit.userId], visit.userId),
+        )
         .toSet()
         .join(', ');
     return Material(
@@ -2230,10 +2203,7 @@ class _HistoryCard extends StatelessWidget {
   final CustomerVisitModel currentVisit;
   final Future<List<CustomerVisitModel>> historyFuture;
 
-  const _HistoryCard({
-    required this.currentVisit,
-    required this.historyFuture,
-  });
+  const _HistoryCard({required this.currentVisit, required this.historyFuture});
 
   @override
   Widget build(BuildContext context) {
@@ -2269,16 +2239,18 @@ class _HistoryCard extends StatelessWidget {
                 );
               }
 
-              final visits = (snapshot.data ?? const <CustomerVisitModel>[])
-                  .where(
-                    (visit) =>
-                        visit.customerName.trim().toLowerCase() ==
-                        currentVisit.customerName.trim().toLowerCase(),
-                  )
-                  .toList()
-                ..sort(
-                  (left, right) => right.createdAt.compareTo(left.createdAt),
-                );
+              final visits =
+                  (snapshot.data ?? const <CustomerVisitModel>[])
+                      .where(
+                        (visit) =>
+                            visit.customerName.trim().toLowerCase() ==
+                            currentVisit.customerName.trim().toLowerCase(),
+                      )
+                      .toList()
+                    ..sort(
+                      (left, right) =>
+                          right.createdAt.compareTo(left.createdAt),
+                    );
               if (visits.isEmpty) {
                 return Text(
                   'No previous visits found.',
@@ -2511,10 +2483,7 @@ _VisitStatusData _visitStatus(String status) {
         color: AppColors.success,
       );
     case 'cancelled':
-      return const _VisitStatusData(
-        label: 'Cancelled',
-        color: AppColors.error,
-      );
+      return const _VisitStatusData(label: 'Cancelled', color: AppColors.error);
     case 'planned':
       return const _VisitStatusData(
         label: 'Planned',

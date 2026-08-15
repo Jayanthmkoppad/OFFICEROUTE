@@ -46,7 +46,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '131809757105',
     projectId: 'officeroute-96b30',
     authDomain: 'officeroute-96b30.firebaseapp.com',
-    databaseURL: 'https://officeroute-96b30-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://officeroute-96b30-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'officeroute-96b30.firebasestorage.app',
     measurementId: 'G-NC0330YSEV',
   );
@@ -56,7 +57,8 @@ class DefaultFirebaseOptions {
     appId: '1:131809757105:android:be45e50bf4155aabce5f90',
     messagingSenderId: '131809757105',
     projectId: 'officeroute-96b30',
-    databaseURL: 'https://officeroute-96b30-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://officeroute-96b30-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'officeroute-96b30.firebasestorage.app',
   );
   static const FirebaseOptions ios = FirebaseOptions(
@@ -64,10 +66,13 @@ class DefaultFirebaseOptions {
     appId: '1:131809757105:ios:992de78e988d1cdbce5f90',
     messagingSenderId: '131809757105',
     projectId: 'officeroute-96b30',
-    databaseURL: 'https://officeroute-96b30-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://officeroute-96b30-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'officeroute-96b30.firebasestorage.app',
-    androidClientId: '131809757105-tb2rkusnjq1u4tntrq14gonl4q2kne9i.apps.googleusercontent.com',
-    iosClientId: '131809757105-q4ujnp8uutg49nkq72i5a5qahvbshm8t.apps.googleusercontent.com',
+    androidClientId:
+        '131809757105-tb2rkusnjq1u4tntrq14gonl4q2kne9i.apps.googleusercontent.com',
+    iosClientId:
+        '131809757105-q4ujnp8uutg49nkq72i5a5qahvbshm8t.apps.googleusercontent.com',
     iosBundleId: 'com.example.officeroute',
   );
   static const FirebaseOptions macos = FirebaseOptions(
@@ -75,10 +80,13 @@ class DefaultFirebaseOptions {
     appId: '1:131809757105:ios:992de78e988d1cdbce5f90',
     messagingSenderId: '131809757105',
     projectId: 'officeroute-96b30',
-    databaseURL: 'https://officeroute-96b30-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://officeroute-96b30-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'officeroute-96b30.firebasestorage.app',
-    androidClientId: '131809757105-tb2rkusnjq1u4tntrq14gonl4q2kne9i.apps.googleusercontent.com',
-    iosClientId: '131809757105-q4ujnp8uutg49nkq72i5a5qahvbshm8t.apps.googleusercontent.com',
+    androidClientId:
+        '131809757105-tb2rkusnjq1u4tntrq14gonl4q2kne9i.apps.googleusercontent.com',
+    iosClientId:
+        '131809757105-q4ujnp8uutg49nkq72i5a5qahvbshm8t.apps.googleusercontent.com',
     iosBundleId: 'com.example.officeroute',
   );
 
@@ -88,7 +96,8 @@ class DefaultFirebaseOptions {
     messagingSenderId: '131809757105',
     projectId: 'officeroute-96b30',
     authDomain: 'officeroute-96b30.firebaseapp.com',
-    databaseURL: 'https://officeroute-96b30-default-rtdb.asia-southeast1.firebasedatabase.app',
+    databaseURL:
+        'https://officeroute-96b30-default-rtdb.asia-southeast1.firebasedatabase.app',
     storageBucket: 'officeroute-96b30.firebasestorage.app',
     measurementId: 'G-G0SW8QR9LJ',
   );

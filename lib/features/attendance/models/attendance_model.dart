@@ -65,9 +65,15 @@ class AttendanceModel {
       'id': id,
       'userId': userId,
       'status': status,
-      'date': date != null ? Timestamp.fromDate(DateTime(date!.year, date!.month, date!.day)) : null,
-      'checkInTime': checkInTime != null ? Timestamp.fromDate(checkInTime!) : null,
-      'checkOutTime': checkOutTime != null ? Timestamp.fromDate(checkOutTime!) : null,
+      'date': date != null
+          ? Timestamp.fromDate(DateTime(date!.year, date!.month, date!.day))
+          : null,
+      'checkInTime': checkInTime != null
+          ? Timestamp.fromDate(checkInTime!)
+          : null,
+      'checkOutTime': checkOutTime != null
+          ? Timestamp.fromDate(checkOutTime!)
+          : null,
       'breakStartTime': breakStartTime != null
           ? Timestamp.fromDate(breakStartTime!)
           : null,
@@ -122,7 +128,9 @@ class AttendanceModel {
   bool get isToday {
     if (date == null) return false;
     final now = DateTime.now();
-    return date!.year == now.year && date!.month == now.month && date!.day == now.day;
+    return date!.year == now.year &&
+        date!.month == now.month &&
+        date!.day == now.day;
   }
 
   bool get isCheckedIn => checkInTime != null && checkOutTime == null;

@@ -82,8 +82,9 @@ class LocationTrackingPolicy {
     if (previousHistoryLocation == null) return true;
     if (next.accuracy > maximumAcceptedAccuracyMeters) return false;
 
-    final elapsed =
-        next.recordedAt.difference(previousHistoryLocation.recordedAt).abs();
+    final elapsed = next.recordedAt
+        .difference(previousHistoryLocation.recordedAt)
+        .abs();
     final movedMeters = distanceMeters(
       previousHistoryLocation.latitude,
       previousHistoryLocation.longitude,
@@ -111,15 +112,14 @@ class LocationTrackingPolicy {
     final deltaLat = _degreesToRadians(endLatitude - startLatitude);
     final deltaLng = _degreesToRadians(endLongitude - startLongitude);
 
-    final haversine = math.sin(deltaLat / 2) * math.sin(deltaLat / 2) +
+    final haversine =
+        math.sin(deltaLat / 2) * math.sin(deltaLat / 2) +
         math.cos(startLatRad) *
             math.cos(endLatRad) *
             math.sin(deltaLng / 2) *
             math.sin(deltaLng / 2);
-    final angularDistance = 2 * math.atan2(
-      math.sqrt(haversine),
-      math.sqrt(1 - haversine),
-    );
+    final angularDistance =
+        2 * math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine));
 
     return earthRadiusMeters * angularDistance;
   }

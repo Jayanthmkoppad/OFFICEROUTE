@@ -7,11 +7,7 @@ class UserHeader extends StatelessWidget {
   final String name;
   final String email;
 
-  const UserHeader({
-    super.key,
-    required this.name,
-    required this.email,
-  });
+  const UserHeader({super.key, required this.name, required this.email});
 
   @override
   Widget build(BuildContext context) {
@@ -24,13 +20,7 @@ class UserHeader extends StatelessWidget {
       ),
       child: Row(
         children: [
-          const CircleAvatar(
-            radius: 32,
-            child: Icon(
-              Icons.person,
-              size: 34,
-            ),
-          ),
+          const CircleAvatar(radius: 32, child: Icon(Icons.person, size: 34)),
 
           const SizedBox(width: 18),
 
@@ -38,15 +28,9 @@ class UserHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  name,
-                  style: AppTextStyles.headingSmall,
-                ),
+                Text(name, style: AppTextStyles.headingSmall),
                 const SizedBox(height: 4),
-                Text(
-                  email,
-                  style: AppTextStyles.caption,
-                ),
+                Text(email, style: AppTextStyles.caption),
               ],
             ),
           ),

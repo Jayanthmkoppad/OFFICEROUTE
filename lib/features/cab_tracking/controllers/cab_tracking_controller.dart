@@ -102,7 +102,9 @@ class CabTrackingController {
   }
 
   /// Loads an active cab driver location session.
-  static Future<LocationSessionModel?> loadActiveDriverSession(String driverId) {
+  static Future<LocationSessionModel?> loadActiveDriverSession(
+    String driverId,
+  ) {
     return LocationController.loadActiveLocationSession(driverId);
   }
 
@@ -114,15 +116,13 @@ class CabTrackingController {
     return LocationController.startLocationSession(
       userId: driverId,
       trackingReason: 'cab_trip',
-      metadata: <String, dynamic>{
-        'assignmentId': assignmentId,
-      },
+      metadata: <String, dynamic>{'assignmentId': assignmentId},
     );
   }
 
   /// Starts foreground live location updates for a driver session.
   static Future<StreamSubscription<LiveLocationModel>>
-      startDriverLiveLocationUpdates({
+  startDriverLiveLocationUpdates({
     required LocationSessionModel session,
     void Function(LiveLocationModel location)? onLocation,
     void Function(Object error, StackTrace stackTrace)? onError,
@@ -172,7 +172,7 @@ class CabTrackingController {
 
   /// Starts foreground updates for an employee pickup sharing session.
   static Future<StreamSubscription<LiveLocationModel>>
-      startEmployeeReadyLiveLocationUpdates({
+  startEmployeeReadyLiveLocationUpdates({
     required LocationSessionModel session,
     void Function(LiveLocationModel location)? onLocation,
     void Function(Object error, StackTrace stackTrace)? onError,

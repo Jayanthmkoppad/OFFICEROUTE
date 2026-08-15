@@ -3,9 +3,10 @@ import 'package:flutter/material.dart';
 
 import 'core/theme/app_theme.dart';
 import 'core/services/firestore_service.dart';
+import 'features/auth/development_access_gate.dart';
 import 'features/auth/login_screen.dart';
-import 'features/auth/session_access_gate.dart';
 import 'features/auth/services/auth_service.dart';
+import 'features/auth/session_access_gate.dart';
 import 'firebase_options.dart';
 
 Future<void> main() async {
@@ -74,44 +75,58 @@ class OfficeRouteApp extends StatelessWidget {
         theme: AppTheme.lightTheme,
         darkTheme: AppTheme.darkTheme,
         themeMode: themeMode,
-        home: StreamBuilder(
-          stream: AuthService.authStateChanges,
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              debugPrint('Firebase auth state stream failed');
-              debugPrint('File: lib/main.dart');
-              debugPrint('Method: OfficeRouteApp.build');
-              debugPrint('Runtime type: ${snapshot.error.runtimeType}');
-              debugPrint('Exception: ${snapshot.error}');
-              debugPrint('Stack trace:\n${snapshot.stackTrace}');
-
-              return Scaffold(
-                body: Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      'Authentication state error:\n${snapshot.error}',
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-              );
-            }
-
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
-              );
-            }
-
-            if (snapshot.hasData) {
-              return _AuthenticatedHome(userId: snapshot.data!.uid);
-            }
-
-            return Theme(data: AppTheme.darkTheme, child: const LoginScreen());
-          },
+        home: DevelopmentAccessGate(
+          firebaseUserId: AuthService.currentUser?.uid,
+          roleLoader: (uid) async =>
+              (await FirestoreService.getUser(uid))?.role,
+          realAuthentication: const _AuthenticationRoot(),
         ),
       ),
+    );
+  }
+}
+
+class _AuthenticationRoot extends StatelessWidget {
+  const _AuthenticationRoot();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder(
+      stream: AuthService.authStateChanges,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          debugPrint('Firebase auth state stream failed');
+          debugPrint('File: lib/main.dart');
+          debugPrint('Method: _AuthenticationRoot.build');
+          debugPrint('Runtime type: ${snapshot.error.runtimeType}');
+          debugPrint('Exception: ${snapshot.error}');
+          debugPrint('Stack trace:\n${snapshot.stackTrace}');
+
+          return Scaffold(
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'Authentication state error:\n${snapshot.error}',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+
+        if (snapshot.hasData) {
+          return _AuthenticatedHome(userId: snapshot.data!.uid);
+        }
+
+        return Theme(data: AppTheme.darkTheme, child: const LoginScreen());
+      },
     );
   }
 }

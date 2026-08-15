@@ -344,64 +344,23 @@ void main() {
     expect(find.byKey(const Key('request_change_button')), findsOneWidget);
   });
 
-  // 22. Invalid edit — empty address rejected in dialog
-  testWidgets('22. Empty address is rejected in Request Change dialog', (
+  testWidgets('22. Pickup settings use the coordinate-backed picker', (
     tester,
   ) async {
     final c = _makeController();
     await tester.pumpWidget(_testApp(c));
     await tester.pumpAndSettle();
-
-    final btn = find.byKey(const Key('request_change_button'));
-    await tester.ensureVisible(btn);
-    await tester.tap(btn);
-    await tester.pumpAndSettle();
-
-    // Clear both fields
-    final homeField = find.byKey(const Key('home_address_field'));
-    await tester.enterText(homeField, '');
-    final pickupField = find.byKey(const Key('preferred_pickup_field'));
-    await tester.enterText(pickupField, '');
-
-    await tester.tap(find.byKey(const Key('save_request_change_button')));
-    await tester.pumpAndSettle();
-
-    // Snackbar with validation message
-    expect(find.text('Enter both address labels.'), findsOneWidget);
+    expect(find.text('PICKUP LOCATION'), findsOneWidget);
+    expect(find.byKey(const Key('preferred_pickup_field')), findsNothing);
   });
 
-  // 23. Failed write preserves old value — dialog remains after failure handled
-  // (structural test: dialog closes and old text is restored on cancel)
-  testWidgets('23. Cancel in dialog does not modify addresses', (tester) async {
-    final c = _makeController(
-      user: const UserModel(
-        uid: 'uid_test',
-        name: 'Test Employee',
-        email: 'test@example.com',
-        phone: '',
-        role: 'Employee',
-        profileImage: '',
-        homeAddress: 'Original Home',
-        preferredPickupAddress: 'Original Pickup',
-      ),
-    );
+  testWidgets('23. Profile does not fabricate pickup coordinates', (
+    tester,
+  ) async {
+    final c = _makeController();
     await tester.pumpWidget(_testApp(c));
     await tester.pumpAndSettle();
-
-    final btn = find.byKey(const Key('request_change_button'));
-    await tester.ensureVisible(btn);
-    await tester.tap(btn);
-    await tester.pumpAndSettle();
-
-    // Verify original values pre-filled in dialog / screen
-    expect(find.text('Original Home'), findsAtLeastNWidgets(1));
-
-    // Cancel
-    await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
-
-    // Controller user unchanged
-    expect(c.currentUser?.homeAddress, 'Original Home');
+    expect(find.text('0.0, 0.0'), findsNothing);
   });
 
   // 24. Duplicate submission prevented — button disabled while saving

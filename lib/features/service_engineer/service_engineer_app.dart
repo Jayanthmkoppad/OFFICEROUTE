@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'service_engineer_complaints_screen.dart';
+import 'service_engineer_home_screen.dart';
+import 'service_engineer_jobs_screen.dart';
+import 'service_engineer_map_screen.dart';
+import 'service_engineer_profile_screen.dart';
+
 class ServiceEngineerApp extends StatefulWidget {
   const ServiceEngineerApp({super.key});
 
@@ -21,37 +27,12 @@ class _ServiceEngineerAppState extends State<ServiceEngineerApp> {
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
-        children: const [
-          _PlaceholderTab(
-            title: 'Service Engineer Desk',
-            subtitle:
-                'Field duty home dashboard will be implemented in Stage 1C.',
-            icon: Icons.engineering_outlined,
-          ),
-          _PlaceholderTab(
-            title: 'Assigned Customer Visits',
-            subtitle:
-                'Job dispatch and site check-in will be implemented in Stage 1C.',
-            icon: Icons.handyman_outlined,
-          ),
-          _PlaceholderTab(
-            title: 'Field Service Map',
-            subtitle:
-                'Customer visit location map will be implemented in Stage 1C.',
-            icon: Icons.map_outlined,
-          ),
-          _PlaceholderTab(
-            title: 'Service Complaints',
-            subtitle:
-                'Complaint inspection and resolution will be implemented in Stage 1C.',
-            icon: Icons.assignment_outlined,
-          ),
-          _PlaceholderTab(
-            title: 'Service Engineer Profile',
-            subtitle:
-                'Field skills and certifications will be implemented in Stage 1C.',
-            icon: Icons.person_outline,
-          ),
+        children: [
+          ServiceEngineerHomeScreen(onNavigateToJobs: () => _selectTab(1)),
+          const ServiceEngineerJobsScreen(),
+          const ServiceEngineerMapScreen(),
+          const ServiceEngineerComplaintsScreen(),
+          const ServiceEngineerProfileScreen(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -84,52 +65,6 @@ class _ServiceEngineerAppState extends State<ServiceEngineerApp> {
             label: 'Profile',
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _PlaceholderTab extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final IconData icon;
-
-  const _PlaceholderTab({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(title), elevation: 0),
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 56,
-                color: Theme.of(context).colorScheme.tertiary,
-              ),
-              const SizedBox(height: 16),
-              Text(
-                title,
-                style: Theme.of(context).textTheme.headlineSmall,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                subtitle,
-                style: Theme.of(context).textTheme.bodyMedium,
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }

@@ -46,19 +46,21 @@ class _ManagerScreenState extends State<ManagerScreen> {
   ) {
     final query = _searchController.text.trim().toLowerCase();
 
-    return summaries.where((summary) {
-      final matchesStatus =
-          _statusFilter == 'all' || summary.liveStatus == _statusFilter;
-      final searchable = [
-        summary.employee.name,
-        summary.employee.email,
-        summary.employee.phone,
-        summary.employee.role,
-        summary.liveStatus,
-      ].join(' ').toLowerCase();
+    return summaries
+        .where((summary) {
+          final matchesStatus =
+              _statusFilter == 'all' || summary.liveStatus == _statusFilter;
+          final searchable = [
+            summary.employee.name,
+            summary.employee.email,
+            summary.employee.phone,
+            summary.employee.role,
+            summary.liveStatus,
+          ].join(' ').toLowerCase();
 
-      return matchesStatus && (query.isEmpty || searchable.contains(query));
-    }).toList(growable: false);
+          return matchesStatus && (query.isEmpty || searchable.contains(query));
+        })
+        .toList(growable: false);
   }
 
   @override
@@ -74,7 +76,9 @@ class _ManagerScreenState extends State<ManagerScreen> {
         future: _future,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const PremiumLoadingState(label: 'Loading employee overview');
+            return const PremiumLoadingState(
+              label: 'Loading employee overview',
+            );
           }
 
           if (snapshot.hasError) {
@@ -85,7 +89,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
             );
           }
 
-          final summaries = snapshot.data ?? const <ManagerEmployeeSummaryModel>[];
+          final summaries =
+              snapshot.data ?? const <ManagerEmployeeSummaryModel>[];
           final filtered = _filtered(summaries);
 
           return RefreshIndicator(
@@ -127,7 +132,8 @@ class _ManagerScreenState extends State<ManagerScreen> {
                     child: PremiumEmptyState(
                       icon: Icons.groups_outlined,
                       title: 'No employees found',
-                      message: 'Employee search and filters did not match any records.',
+                      message:
+                          'Employee search and filters did not match any records.',
                     ),
                   )
                 else
@@ -140,11 +146,11 @@ class _ManagerScreenState extends State<ManagerScreen> {
                           itemCount: filtered.length,
                           gridDelegate:
                               SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: wide ? 2 : 1,
-                            mainAxisSpacing: 14,
-                            crossAxisSpacing: 14,
-                            childAspectRatio: wide ? 1.85 : 1.35,
-                          ),
+                                crossAxisCount: wide ? 2 : 1,
+                                mainAxisSpacing: 14,
+                                crossAxisSpacing: 14,
+                                childAspectRatio: wide ? 1.85 : 1.35,
+                              ),
                           itemBuilder: (context, index) {
                             return _EmployeeCard(summary: filtered[index]);
                           },
@@ -168,10 +174,15 @@ class _ManagerSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final online = summaries.where((summary) => summary.liveStatus == 'online').length;
-    final onBreak = summaries.where((summary) => summary.liveStatus == 'break').length;
-    final completed =
-        summaries.where((summary) => summary.liveStatus == 'completed').length;
+    final online = summaries
+        .where((summary) => summary.liveStatus == 'online')
+        .length;
+    final onBreak = summaries
+        .where((summary) => summary.liveStatus == 'break')
+        .length;
+    final completed = summaries
+        .where((summary) => summary.liveStatus == 'completed')
+        .length;
 
     return PremiumCard(
       padding: const EdgeInsets.all(22),
@@ -536,7 +547,10 @@ _StatusData _statusData(String status) {
     case 'completed':
       return const _StatusData(label: 'Done', color: AppColors.info);
     default:
-      return const _StatusData(label: 'Offline', color: AppColors.textSecondary);
+      return const _StatusData(
+        label: 'Offline',
+        color: AppColors.textSecondary,
+      );
   }
 }
 

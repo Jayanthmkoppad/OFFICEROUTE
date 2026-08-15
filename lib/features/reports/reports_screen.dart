@@ -32,7 +32,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
 
   void _showExportPlaceholder(String format) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$format export placeholder is ready for backend wiring.')),
+      SnackBar(
+        content: Text(
+          '$format export placeholder is ready for backend wiring.',
+        ),
+      ),
     );
   }
 

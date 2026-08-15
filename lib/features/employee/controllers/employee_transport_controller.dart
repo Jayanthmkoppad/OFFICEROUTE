@@ -40,6 +40,17 @@ typedef UserStreamFactory = Stream<UserModel?> Function(String userId);
 typedef VehicleStreamFactory =
     Stream<CabVehicleModel?> Function(String vehicleId);
 typedef CurrentDayRefreshCallback = Future<void> Function(String dateKey);
+typedef PickupRequestCreator =
+    Future<CabAssignmentMemberModel> Function({
+      required String userId,
+      required String dateKey,
+      required String pickupName,
+      required String pickupAddress,
+      required double pickupLatitude,
+      required double pickupLongitude,
+      required String branch,
+      required String serviceCentre,
+    });
 typedef PassengerRemarkUpdater =
     Future<void> Function(String tripId, String employeeId, String remark);
 typedef RosterIdentityLoader =
@@ -137,7 +148,7 @@ class EmployeeTransportController extends ChangeNotifier {
   List<PassengerProgressModel> _tripProgress = [];
   List<String> _configuredRosterIds = [];
   Map<String, UserModel> _rosterUsersById = {};
-  String _presenceDiagnosticCode = 'ok';
+  final String _presenceDiagnosticCode = 'ok';
   String rosterDiagnosticCode = 'ok';
 
   /// Explicit decoupled state indicators
@@ -231,6 +242,7 @@ class EmployeeTransportController extends ChangeNotifier {
   final Future<Position> Function()? currentPositionGetter;
   final DateTime Function()? clock;
   final CurrentDayRefreshCallback? currentDayRefreshCallback;
+  final PickupRequestCreator? pickupRequestCreator;
   final PassengerRemarkUpdater? passengerRemarkUpdater;
   final RosterIdentityLoader? rosterIdentityLoader;
 
@@ -271,6 +283,7 @@ class EmployeeTransportController extends ChangeNotifier {
     this.currentPositionGetter,
     this.clock,
     this.currentDayRefreshCallback,
+    this.pickupRequestCreator,
     this.passengerRemarkUpdater,
     this.rosterIdentityLoader,
     this.assignmentStreamFactory,
@@ -478,6 +491,280 @@ class EmployeeTransportController extends ChangeNotifier {
     }
   }
 
+  Future<EmployeeActionResult> clearPreferredPickup() async {
+    final uid = currentUidGetter?.call() ?? _authObj.currentUser?.uid;
+    if (uid == null || uid.isEmpty) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Employee is not authenticated.',
+      );
+    }
+    try {
+      await _dbObj.collection('users').doc(uid).update({
+        'preferredPickupAddress': null,
+        'preferredPickupLatitude': null,
+        'preferredPickupLongitude': null,
+      });
+      return const EmployeeActionResult(
+        isAccepted: true,
+        message: 'Pickup location cleared.',
+      );
+    } catch (_) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Could not clear pickup location.',
+      );
+    }
+  }
+
+  bool get hasTodayPickupRequest =>
+      myAssignmentMember != null &&
+      myAssignmentMember!.dateKey == _activeDateKey &&
+      myAssignmentMember!.status != 'cancelled';
+
+  bool get canCancelPickupRequest =>
+      hasTodayPickupRequest &&
+      myAssignmentMember!.driverId.isEmpty &&
+      const {'assigned', 'ready'}.contains(myAssignmentMember!.status);
+
+  Future<EmployeeActionResult> requestPickupForToday() async {
+    if (isActionLoading) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'A transport update is already in progress.',
+      );
+    }
+    final uid = currentUidGetter?.call() ?? _authObj.currentUser?.uid;
+    final user = currentUser;
+    if (uid == null || uid.isEmpty || user == null) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Employee is not authenticated.',
+      );
+    }
+    final address = user.preferredPickupAddress.trim();
+    final lat = user.preferredPickupLatitude;
+    final lng = user.preferredPickupLongitude;
+    if (address.isEmpty || lat == null || lng == null) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message:
+            'Configure an approved pickup address before requesting pickup.',
+      );
+    }
+    isActionLoading = true;
+    _safeNotifyListeners();
+    try {
+      final creator =
+          pickupRequestCreator ??
+          CabAssignmentService.createEmployeePickupRequest;
+      final request = await creator(
+        userId: uid,
+        dateKey: _activeDateKey,
+        pickupName: address,
+        pickupAddress: address,
+        pickupLatitude: lat,
+        pickupLongitude: lng,
+        branch: user.branch,
+        serviceCentre: user.serviceCentre,
+      );
+      myAssignmentMember = request;
+      errorMessage = null;
+      return const EmployeeActionResult(
+        isAccepted: true,
+        message: 'Pickup requested. Waiting for a Driver.',
+      );
+    } on FirebaseException catch (error) {
+      return EmployeeActionResult(
+        isAccepted: false,
+        message: error.code == 'permission-denied'
+            ? 'Pickup request permission was denied.'
+            : 'Could not request pickup. Please retry.',
+      );
+    } finally {
+      isActionLoading = false;
+      _safeNotifyListeners();
+    }
+  }
+
+  Future<EmployeeActionResult> markPickupRequestReady() async {
+    final member = myAssignmentMember;
+    if (member == null ||
+        member.driverId.isNotEmpty ||
+        member.status != 'assigned') {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Only an unclaimed pickup request can be marked Ready.',
+      );
+    }
+    isActionLoading = true;
+    _safeNotifyListeners();
+    try {
+      final updater =
+          memberStatusUpdater ??
+          CabAssignmentService.updateEmployeePickupRequestStatus;
+      await updater(memberId: member.id, status: 'ready');
+      myAssignmentMember = member.copyWith(
+        status: 'ready',
+        updatedAt: currentTime,
+      );
+      return const EmployeeActionResult(
+        isAccepted: true,
+        message: 'Ready for pickup. Waiting for Driver selection.',
+      );
+    } finally {
+      isActionLoading = false;
+      _safeNotifyListeners();
+    }
+  }
+
+  Future<EmployeeActionResult> cancelPickupRequest() async {
+    final member = myAssignmentMember;
+    if (!canCancelPickupRequest || member == null) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'This pickup request can no longer be cancelled.',
+      );
+    }
+    isActionLoading = true;
+    _safeNotifyListeners();
+    try {
+      final updater =
+          memberStatusUpdater ??
+          CabAssignmentService.updateEmployeePickupRequestStatus;
+      await updater(memberId: member.id, status: 'cancelled');
+      myAssignmentMember = member.copyWith(
+        status: 'cancelled',
+        updatedAt: currentTime,
+      );
+      return const EmployeeActionResult(
+        isAccepted: true,
+        message: 'Pickup request cancelled.',
+      );
+    } finally {
+      isActionLoading = false;
+      _safeNotifyListeners();
+    }
+  }
+
+  bool get hasTransportInvitation =>
+      myAssignmentMember != null &&
+      myAssignmentMember!.dateKey == _activeDateKey &&
+      myAssignmentMember!.invitationStatus != 'not_invited' &&
+      myAssignmentMember!.invitationStatus != 'cancelled';
+
+  bool get canRespondToTransportInvitation =>
+      hasTransportInvitation &&
+      myAssignmentMember!.invitationStatus == 'invited';
+
+  Future<EmployeeActionResult> acceptTransportInvitation({
+    String pickupName = '',
+    String pickupAddress = '',
+    double? pickupLatitude,
+    double? pickupLongitude,
+  }) async {
+    final member = myAssignmentMember;
+    final uid = currentUidGetter?.call() ?? _authObj.currentUser?.uid;
+    final user = currentUser;
+    if (member == null ||
+        uid == null ||
+        uid.isEmpty ||
+        user == null ||
+        !canRespondToTransportInvitation) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Transport invitation is no longer available.',
+      );
+    }
+    final address = pickupAddress.trim().isNotEmpty
+        ? pickupAddress.trim()
+        : (member.pickupAddress.trim().isNotEmpty
+              ? member.pickupAddress.trim()
+              : user.preferredPickupAddress.trim());
+    final name = pickupName.trim().isNotEmpty
+        ? pickupName.trim()
+        : (member.pickupName.trim().isNotEmpty
+              ? member.pickupName.trim()
+              : address);
+    final latitude =
+        pickupLatitude ?? member.pickupLatitude ?? user.preferredPickupLatitude;
+    final longitude =
+        pickupLongitude ??
+        member.pickupLongitude ??
+        user.preferredPickupLongitude;
+    if (address.isEmpty || latitude == null || longitude == null) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Set your pickup location',
+      );
+    }
+    isActionLoading = true;
+    _safeNotifyListeners();
+    try {
+      final updated = await CabAssignmentService.respondToTransportInvitation(
+        memberId: member.id,
+        employeeId: uid,
+        accept: true,
+        pickupName: name,
+        pickupAddress: address,
+        pickupLatitude: latitude,
+        pickupLongitude: longitude,
+      );
+      myAssignmentMember = updated;
+      return const EmployeeActionResult(
+        isAccepted: true,
+        message: 'Cab invitation accepted.',
+      );
+    } catch (_) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Could not accept the cab invitation. Please retry.',
+      );
+    } finally {
+      isActionLoading = false;
+      _safeNotifyListeners();
+    }
+  }
+
+  Future<EmployeeActionResult> declineTransportInvitation({
+    String reason = '',
+  }) async {
+    final member = myAssignmentMember;
+    final uid = currentUidGetter?.call() ?? _authObj.currentUser?.uid;
+    if (member == null ||
+        uid == null ||
+        uid.isEmpty ||
+        !canRespondToTransportInvitation) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Transport invitation is no longer available.',
+      );
+    }
+    isActionLoading = true;
+    _safeNotifyListeners();
+    try {
+      final updated = await CabAssignmentService.respondToTransportInvitation(
+        memberId: member.id,
+        employeeId: uid,
+        accept: false,
+        declineReason: reason,
+      );
+      myAssignmentMember = updated;
+      return const EmployeeActionResult(
+        isAccepted: true,
+        message: 'Cab invitation declined.',
+      );
+    } catch (_) {
+      return const EmployeeActionResult(
+        isAccepted: false,
+        message: 'Could not decline the cab invitation. Please retry.',
+      );
+    } finally {
+      isActionLoading = false;
+      _safeNotifyListeners();
+    }
+  }
+
   Future<void> _initRealtimeListeners() async {
     final uid = currentUidGetter?.call() ?? _authObj.currentUser?.uid;
     if (uid == null || uid.isEmpty) {
@@ -492,21 +779,9 @@ class EmployeeTransportController extends ChangeNotifier {
     final nowTime = clock?.call() ?? DateTime.now();
 
     await _cancelAllSubscriptions();
-    _sharedPresenceSubscription = SharedMapPresenceService.watchActivePresence()
-        .listen(
-          (items) {
-            _presenceDiagnosticCode = 'ok';
-            sharedMapPresence = items;
-            _refreshConfiguredRosterProjection();
-            _safeNotifyListeners();
-          },
-          onError: (Object error) {
-            _presenceDiagnosticCode = _rosterErrorCode(error);
-            sharedMapPresence = [];
-            _refreshConfiguredRosterProjection();
-            _safeNotifyListeners();
-          },
-        );
+    // Employee transport uses assignment-scoped live_locations. A broad
+    // shared_map_presence query would disclose unrelated users' coordinates.
+    sharedMapPresence = const <SharedMapPresenceModel>[];
 
     // 1. User document stream
     _userSubscription = _dbObj
@@ -1016,7 +1291,10 @@ class EmployeeTransportController extends ChangeNotifier {
     await _cancelSubscription(_passengerProgressSubscription);
     final progStream = passengerProgressStreamFactory != null
         ? passengerProgressStreamFactory!(tripId)
-        : PassengerProgressService.watchPassengerProgress(tripId);
+        : PassengerProgressService.watchOwnPassengerProgress(
+            tripId,
+            currentUidGetter?.call() ?? _authObj.currentUser?.uid ?? '',
+          );
 
     _passengerProgressSubscription = progStream.listen(
       (list) {
@@ -1488,10 +1766,10 @@ class EmployeeTransportController extends ChangeNotifier {
     return speed * 3.6;
   }
 
-  /// Driver speed display string: returns '—' when unavailable.
+  /// Driver speed display string: returns 'â€”' when unavailable.
   String get cabSpeedDisplay {
     final speed = cabSpeedKmH;
-    if (speed == null) return '—';
+    if (speed == null) return 'â€”';
     return '${speed.round()} km/h';
   }
 
@@ -1512,10 +1790,10 @@ class EmployeeTransportController extends ChangeNotifier {
 
   String get dutyDurationDisplay {
     final checkIn = todayAttendance?.checkInTime;
-    if (checkIn == null) return '—';
+    if (checkIn == null) return 'â€”';
     final end = todayAttendance?.checkOutTime ?? currentTime;
     final duration = end.difference(checkIn);
-    if (duration.isNegative) return '—';
+    if (duration.isNegative) return 'â€”';
     final hours = duration.inHours;
     final minutes = duration.inMinutes.remainder(60);
     return hours == 0 ? '${minutes}m' : '${hours}h ${minutes}m';
@@ -1548,7 +1826,7 @@ class EmployeeTransportController extends ChangeNotifier {
       errorMessage = null;
       return const EmployeeActionResult(
         isAccepted: true,
-        message: 'Today’s status is up to date.',
+        message: 'Todayâ€™s status is up to date.',
       );
     } catch (error) {
       debugPrint('Current-day refresh error: $error');
@@ -1700,7 +1978,7 @@ class EmployeeTransportController extends ChangeNotifier {
         }
         return const EmployeeActionResult(
           isAccepted: true,
-          message: 'Attendance started — no transport route assigned today.',
+          message: 'Attendance started â€” no transport route assigned today.',
         );
       }
 
@@ -1712,7 +1990,7 @@ class EmployeeTransportController extends ChangeNotifier {
         }
         return const EmployeeActionResult(
           isAccepted: true,
-          message: 'Attendance started — pickup point is not configured.',
+          message: 'Attendance started â€” pickup point is not configured.',
         );
       }
 
@@ -2375,7 +2653,7 @@ class EmployeeTransportController extends ChangeNotifier {
     passengerProgressSyncError = null;
   }
 
-  /// Computed Home screen state for the 13-state machine (A–M).
+  /// Computed Home screen state for the 13-state machine (Aâ€“M).
   /// UI reads this single getter to decide its layout.
   String get homeState {
     // M: Offline / error
@@ -2392,8 +2670,8 @@ class EmployeeTransportController extends ChangeNotifier {
     if (attendance.status == 'On Break') return 'A';
 
     final member = myAssignmentMember;
-    // B: Attendance active, no route
-    if (member == null || member.assignmentId.isEmpty) return 'B';
+    // B: No current-day pickup request.
+    if (member == null || member.status == 'cancelled') return 'B';
 
     // C: Route assigned, pickup missing
     final lat = member.pickupLatitude;
@@ -2421,12 +2699,13 @@ class EmployeeTransportController extends ChangeNotifier {
       return 'F';
     }
 
-    // E: Driver assigned, trip not started
-    if (activeAssignment != null && activeAssignment!.driverId.isNotEmpty) {
+    // E: Driver assigned, trip not started.
+    if (member.driverId.isNotEmpty ||
+        (activeAssignment != null && activeAssignment!.driverId.isNotEmpty)) {
       return 'E';
     }
 
-    // D: Route and pickup configured, driver pending
+    // D: Pickup requested, Driver pending.
     return 'D';
   }
 
@@ -2477,8 +2756,9 @@ class EmployeeTransportController extends ChangeNotifier {
           : lower.contains('offline') || lower.contains('network')
           ? 'offline'
           : 'query_failed';
-    } else if (todayAttendance != null && myAssignmentMember == null) {
-      diagnostic = 'no_today_operation';
+    } else if (myAssignmentMember == null ||
+        myAssignmentMember!.status == 'cancelled') {
+      diagnostic = 'no_pickup_request';
     } else if (myAssignmentMember != null &&
         (myAssignmentMember!.pickupLatitude == null ||
             myAssignmentMember!.pickupLongitude == null)) {
@@ -2551,8 +2831,8 @@ class EmployeeTransportController extends ChangeNotifier {
     if (attendance.status == 'Checked Out') return 'Duty Completed';
 
     final member = myAssignmentMember;
-    if (member == null || member.assignmentId.isEmpty) {
-      return 'No route assigned today';
+    if (member == null || member.status == 'cancelled') {
+      return 'Request Pickup';
     }
 
     final riderStatus = myRiderRecord?.status;

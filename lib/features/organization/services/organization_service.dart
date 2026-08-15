@@ -26,9 +26,10 @@ class OrganizationService {
   ) async {
     final employeesFuture = FirestoreService.fetchAllUsers();
     final attendanceFuture = AttendanceService.fetchAttendanceForDate(day);
-    final visitsFuture = CustomerVisitService.fetchOperationalVisitsForDate(day);
-    final locationsFuture = LiveLocationService.watchLiveLocations()
-        .first
+    final visitsFuture = CustomerVisitService.fetchOperationalVisitsForDate(
+      day,
+    );
+    final locationsFuture = LiveLocationService.watchLiveLocations().first
         .timeout(
           const Duration(seconds: 8),
           onTimeout: () => const <LiveLocationModel>[],
@@ -38,8 +39,9 @@ class OrganizationService {
       employees: List<UserModel>.unmodifiable(await employeesFuture),
       attendance: List<AttendanceModel>.unmodifiable(await attendanceFuture),
       visits: List<CustomerVisitModel>.unmodifiable(await visitsFuture),
-      liveLocations:
-          List<LiveLocationModel>.unmodifiable(await locationsFuture),
+      liveLocations: List<LiveLocationModel>.unmodifiable(
+        await locationsFuture,
+      ),
       loadedAt: DateTime.now(),
     );
   }

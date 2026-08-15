@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../../shared/widgets/transport_location_picker.dart';
+
 import '../../core/design/office_route_colors.dart';
 import '../../core/design/office_route_radii.dart';
 import '../../core/design/office_route_spacing.dart';
@@ -429,11 +431,18 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
               _ActionButton(
                 key: const Key('request_change_button'),
                 icon: Icons.edit_outlined,
-                label: 'Request Change',
+                label: 'PICKUP LOCATION',
                 iconColor: OfficeRouteColors.liveBlue,
                 textColor: OfficeRouteColors.liveBlue,
                 borderColor: OfficeRouteColors.liveBlue.withValues(alpha: 0.5),
-                onPressed: () => _showRequestChangeDialog(controller),
+                onPressed: () => _showPickupLocationPicker(controller),
+              ),
+              const SizedBox(height: OfficeRouteSpacing.sm),
+              _ActionButton(
+                key: const Key('clear_pickup_button'),
+                icon: Icons.location_off_outlined,
+                label: 'Clear Pickup Location',
+                onPressed: () => _clearPickupLocation(controller),
               ),
               const SizedBox(height: OfficeRouteSpacing.sm),
               _ActionButton(
@@ -492,125 +501,51 @@ class _EmployeeProfileScreenState extends State<EmployeeProfileScreen> {
     );
   }
 
-  Future<void> _showRequestChangeDialog(
+  Future<void> _clearPickupLocation(
+    EmployeeTransportController controller,
+  ) async {
+    final result = await controller.clearPreferredPickup();
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
+  }
+
+  Future<void> _showPickupLocationPicker(
     EmployeeTransportController controller,
   ) async {
     final user = controller.currentUser;
     if (user == null) return;
-
-    final homeCtrl = TextEditingController(text: user.homeAddress);
-    final pickupCtrl = TextEditingController(text: user.preferredPickupAddress);
-    bool saving = false;
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setStateDialog) {
-            return AlertDialog(
-              backgroundColor: OfficeRouteColors.raisedSurface,
-              shape: RoundedRectangleBorder(
-                borderRadius: OfficeRouteRadii.cardRadius,
-              ),
-              title: const Text(
-                'Request Change',
-                style: OfficeRouteTypography.cardTitle,
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      key: const Key('home_address_field'),
-                      controller: homeCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Home address',
-                        prefixIcon: Icon(Icons.home_outlined),
-                      ),
-                      maxLines: 2,
-                    ),
-                    const SizedBox(height: OfficeRouteSpacing.md),
-                    TextField(
-                      key: const Key('preferred_pickup_field'),
-                      controller: pickupCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Preferred pickup address',
-                        prefixIcon: Icon(Icons.location_on_outlined),
-                      ),
-                      maxLines: 2,
-                    ),
-                    const SizedBox(height: OfficeRouteSpacing.sm),
-                    Text(
-                      'Pickup and destination assignments are controlled by the Administrator.',
-                      style: OfficeRouteTypography.secondary,
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: saving ? null : () => Navigator.pop(ctx),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton.icon(
-                  key: const Key('save_request_change_button'),
-                  onPressed: saving
-                      ? null
-                      : () async {
-                          final home = homeCtrl.text.trim();
-                          final pickup = pickupCtrl.text.trim();
-                          if (home.isEmpty || pickup.isEmpty) {
-                            ScaffoldMessenger.of(ctx).showSnackBar(
-                              const SnackBar(
-                                content: Text('Enter both address labels.'),
-                              ),
-                            );
-                            return;
-                          }
-                          setStateDialog(() => saving = true);
-                          final result = await controller.saveTravelLocations(
-                            homeAddress: home,
-                            homeLatitude: 0.0,
-                            homeLongitude: 0.0,
-                            pickupAddress: pickup,
-                            pickupLatitude: 0.0,
-                            pickupLongitude: 0.0,
-                          );
-                          if (ctx.mounted) {
-                            Navigator.pop(ctx);
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(result.message)),
-                              );
-                            }
-                          }
-                        },
-                  icon: saving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.save_outlined),
-                  label: const Text('Save'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+    final lat = user.preferredPickupLatitude;
+    final lng = user.preferredPickupLongitude;
+    final selection = await TransportLocationPicker.show(
+      context,
+      title: 'PICKUP LOCATION',
+      initialSelection: lat == null || lng == null
+          ? null
+          : TransportLocationSelection(
+              label: user.preferredPickupAddress,
+              address: user.preferredPickupAddress,
+              latitude: lat,
+              longitude: lng,
+            ),
     );
-
-    homeCtrl.dispose();
-    pickupCtrl.dispose();
+    if (selection == null || !mounted) return;
+    final result = await controller.saveTravelLocations(
+      homeAddress: user.homeAddress,
+      homeLatitude: user.homeLatitude ?? selection.latitude,
+      homeLongitude: user.homeLongitude ?? selection.longitude,
+      pickupAddress: selection.address,
+      pickupLatitude: selection.latitude,
+      pickupLongitude: selection.longitude,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
   }
 }
 
-// ────────────────────────────────────────────────────────────────────────────
-// Private sub-widgets
-// ────────────────────────────────────────────────────────────────────────────
-
-/// Hero identity card matching Figma PNG (square rounded avatar, bold name, emp code & branch).
 class _IdentityHeroCard extends StatelessWidget {
   const _IdentityHeroCard({
     required this.name,

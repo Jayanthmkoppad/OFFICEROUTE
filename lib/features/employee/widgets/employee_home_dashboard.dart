@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
+import '../../../shared/widgets/transport_location_picker.dart';
+
 import '../../../core/models/passenger_progress_model.dart';
 import '../controllers/employee_transport_controller.dart';
 import 'employee_transport_roster_card.dart';
@@ -38,8 +40,10 @@ class EmployeeHomeDashboard extends StatelessWidget {
                       onOpenMap: onNavigateToMap,
                       onRefresh: () => _refresh(context, controller),
                     ),
-                    const SizedBox(height: 12),
-                    _KpiGrid(controller: controller, state: state),
+                    if (controller.activeTrip != null) ...[
+                      const SizedBox(height: 12),
+                      _KpiGrid(controller: controller, state: state),
+                    ],
                     if (controller.activeAssignment != null) ...[
                       const SizedBox(height: 24),
                       _MapPreview(
@@ -102,9 +106,9 @@ class EmployeeHomeDashboard extends StatelessWidget {
       return 'No active route for today';
     }
     if (controller.activeTrip == null) {
-      return 'Configured route · Trip not started';
+      return 'Configured route Ã‚Â· Trip not started';
     }
-    return 'Live pickup progress · Same route only';
+    return 'Live pickup progress Ã‚Â· Same route only';
   }
 
   static Future<void> _refresh(
@@ -184,29 +188,29 @@ class _TopBar extends StatelessWidget {
   }
 
   (String, Color) _status(EmployeeTransportController controller) {
-    if (controller.connectionStatus == 'TRACKING') {
-      return ('READY', _HomeColors.green);
-    }
-    if (controller.homeViewState.diagnosticCode ==
-        'location_services_disabled') {
+    final diagnostic = controller.homeViewState.diagnosticCode;
+    if (diagnostic == 'location_services_disabled') {
       return ('GPS OFF', _HomeColors.amber);
     }
-    if (controller.homeViewState.diagnosticCode == 'offline') {
-      return ('OFFLINE', _HomeColors.error);
-    }
-    if (controller.homeViewState.diagnosticCode == 'permission_denied') {
+    if (diagnostic == 'offline') return ('OFFLINE', _HomeColors.error);
+    if (diagnostic == 'permission_denied') {
       return ('LOCATION OFF', _HomeColors.amber);
     }
+    final invitation = controller.myAssignmentMember?.invitationStatus;
+    if (invitation == 'invited') return ('INVITED', _HomeColors.amber);
+    if (invitation == 'accepted' || invitation == 'trip_active') {
+      return ('ACCEPTED', _HomeColors.green);
+    }
+    if (invitation == 'declined') return ('DECLINED', _HomeColors.muted);
     if (controller.activeAssignment != null) {
       return ('CONNECTED', _HomeColors.accent);
     }
-    return ('WAITING', _HomeColors.muted);
+    return ('NO INVITATION', _HomeColors.muted);
   }
 }
 
 class _Welcome extends StatelessWidget {
   const _Welcome({required this.controller});
-
   final EmployeeTransportController controller;
 
   @override
@@ -220,12 +224,15 @@ class _Welcome extends StatelessWidget {
         : now.hour < 17
         ? 'Good afternoon'
         : 'Good evening';
+    final invitation = controller.myAssignmentMember?.invitationStatus;
     final message = controller.activeTrip != null
-        ? 'Your commute is active and live transport updates are connected.'
-        : controller.activeAssignment != null
-        ? 'Your commute is scheduled. The trip has not started yet.'
-        : 'Today’s transport will appear when a route is configured.';
-
+        ? 'Your office trip is active.'
+        : invitation == 'invited'
+        ? 'A Driver has invited you to today'
+              's office trip.'
+        : invitation == 'accepted'
+        ? 'Invitation accepted. Waiting for the Driver to start the trip.'
+        : 'No transport invitation for today.';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -244,7 +251,6 @@ class _TransportHero extends StatelessWidget {
     required this.onOpenMap,
     required this.onRefresh,
   });
-
   final EmployeeTransportController controller;
   final EmployeeHomeViewState state;
   final VoidCallback onOpenMap;
@@ -263,7 +269,6 @@ class _TransportHero extends StatelessWidget {
         ),
       );
     }
-
     final content = _heroContent(controller, state);
     return _HomeCard(
       key: const Key('employee_transport_hero'),
@@ -293,12 +298,18 @@ class _TransportHero extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
-                  const Text('Arrival', style: _HomeText.bodyMuted),
+                  const Text('Status', style: _HomeText.bodyMuted),
                   Text(content.arrival, style: _HomeText.title),
                 ],
               ),
             ],
           ),
+          if (controller.myAssignmentMember != null &&
+              controller.myAssignmentMember!.invitationStatus !=
+                  'not_invited') ...[
+            const SizedBox(height: 16),
+            _InvitationDetails(controller: controller),
+          ],
           const SizedBox(height: 16),
           _HeroActions(
             controller: controller,
@@ -315,66 +326,93 @@ class _TransportHero extends StatelessWidget {
     EmployeeHomeViewState state,
   ) {
     final diagnostic = state.diagnosticCode;
-    if (diagnostic == 'location_services_disabled') {
+    if (diagnostic == 'offline' || diagnostic == 'query_failed') {
       return const _HeroContent(
-        'LOCATION SERVICES DISABLED',
-        'Device location is off',
-        'Enable device location services to resume pickup tracking.',
+        'CAB SERVICE',
+        'Unable to load transport',
+        'Check your connection and retry.',
         'Unavailable',
       );
     }
-    if (diagnostic == 'permission_denied') {
+    final member = controller.myAssignmentMember;
+    if (member == null ||
+        member.invitationStatus == 'not_invited' ||
+        member.invitationStatus == 'cancelled') {
       return const _HeroContent(
-        'LOCATION PERMISSION REQUIRED',
-        'Location unavailable',
-        'Grant location access to enable pickup tracking.',
-        'Unavailable',
+        'CAB SERVICE',
+        'NO CAB INVITATION',
+        'No transport invitation for today.',
+        'Not invited',
       );
     }
-    if (diagnostic == 'offline') {
+    if (member.invitationStatus == 'declined') {
       return const _HeroContent(
-        'TRANSPORT CONNECTION',
-        'You’re offline',
-        'Live updates will resume when the connection returns.',
-        'Unavailable',
+        'CAB INVITATION',
+        'Invitation declined',
+        'You are not included in today'
+            's pickup plan.',
+        'Declined',
       );
     }
-    if (diagnostic == 'query_failed') {
-      return const _HeroContent(
-        'TRANSPORT QUERY FAILED',
-        'Could not load transport',
-        'Your saved attendance and route data have not been replaced.',
-        'Unavailable',
+    if (member.invitationStatus == 'invited') {
+      final destination = member.officeName.trim().isEmpty
+          ? 'Office destination'
+          : member.officeName.trim();
+      return _HeroContent(
+        'CAB INVITATION',
+        'Cab available for today'
+            's office trip',
+        'Destination: $destination',
+        'Pending response',
       );
     }
-    if (diagnostic == 'pickup_missing') {
-      return const _HeroContent(
-        'PICKUP NOT CONFIGURED',
-        'Pickup point not configured',
-        'Ask an Administrator to configure your permanent pickup location.',
-        'Unavailable',
+    if (member.invitationStatus == 'accepted' &&
+        controller.activeTrip == null) {
+      return _HeroContent(
+        'CAB SERVICE',
+        'ACCEPTED',
+        'Waiting for Driver to start the trip.',
+        'Accepted',
       );
     }
-    if (controller.activeAssignment == null) {
+    final riderStatus = controller.myRiderRecord?.status ?? '';
+    final tripStatus = controller.activeTrip?.status ?? '';
+    if (riderStatus == 'completed' ||
+        riderStatus == 'dropped' ||
+        tripStatus == 'completed') {
       return const _HeroContent(
-        'NO ACTIVE ROUTE FOR TODAY',
-        'Route not configured',
-        'TODAY’S EMPLOYEES remains visible below.',
-        'Unavailable',
+        'CAB SERVICE',
+        'TRIP COMPLETED',
+        'Arrived at office.',
+        'Completed',
       );
     }
-
+    if (riderStatus == 'picked_up' || riderStatus == 'boarded') {
+      return const _HeroContent(
+        'CAB SERVICE',
+        'ONBOARD',
+        'You are onboard. Destination: office.',
+        'Onboard',
+      );
+    }
+    if (riderStatus == 'arrived' ||
+        riderStatus == 'waiting' ||
+        riderStatus == 'driver_waiting') {
+      return const _HeroContent(
+        'CAB SERVICE',
+        'DRIVER ARRIVED',
+        'Your Driver is waiting at your pickup.',
+        'Arrived',
+      );
+    }
     final distance = controller.cabDistanceToPickupMeters;
-    final value = distance == null
-        ? 'Cab location unavailable'
-        : '${_formatDistance(distance)} away';
     return _HeroContent(
-      'CAB TO YOUR PICKUP',
-      value,
+      'CAB SERVICE',
+      'DRIVER APPROACHING',
       distance == null
-          ? 'Waiting for an authorized Driver location.'
-          : 'Straight-line distance · Traffic ETA unavailable',
-      'Unavailable',
+          ? 'ETA unavailable'
+          : 'Approx. ${_formatDistance(distance)} away - ETA unavailable',
+      'Trip active',
     );
   }
 }
@@ -385,122 +423,243 @@ class _HeroActions extends StatelessWidget {
     required this.onOpenMap,
     required this.onRefresh,
   });
-
   final EmployeeTransportController controller;
   final VoidCallback onOpenMap;
   final VoidCallback onRefresh;
 
   @override
   Widget build(BuildContext context) {
+    if (controller.transportTrackingState == 'stop_failed') {
+      return SizedBox(
+        width: double.infinity,
+        child: FilledButton.icon(
+          key: const Key('retry_stop_button'),
+          onPressed: controller.isActionLoading
+              ? null
+              : controller.retryStopLocationSharing,
+          icon: const Icon(Icons.stop_circle_outlined),
+          label: const Text('Retry Stop'),
+        ),
+      );
+    }
     if (controller.transportSyncState == 'sync_pending') {
       return SizedBox(
         width: double.infinity,
-        child: OutlinedButton.icon(
+        child: FilledButton.icon(
           key: const Key('retry_sync_button'),
           onPressed: controller.isActionLoading
               ? null
-              : () async {
-                  await controller.retryTripSynchronization();
-                  if (!context.mounted) return;
-                  final succeeded = controller.transportSyncState == 'synced';
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        succeeded
-                            ? 'Trip synchronization restored.'
-                            : 'Trip synchronization is still pending.',
-                      ),
-                    ),
-                  );
-                },
+              : controller.retryTripSynchronization,
           icon: const Icon(Icons.sync),
           label: const Text('Retry Sync'),
         ),
       );
     }
-    if (controller.transportTrackingState == 'stop_failed') {
-      return SizedBox(
-        width: double.infinity,
-        child: OutlinedButton.icon(
-          key: const Key('retry_stop_button'),
-          onPressed: controller.isActionLoading
-              ? null
-              : () async {
-                  final succeeded = await controller.retryStopLocationSharing();
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        succeeded
-                            ? 'Location sharing stopped.'
-                            : 'Could not stop location sharing. Try again.',
-                      ),
-                    ),
-                  );
-                },
-          icon: const Icon(Icons.location_off_outlined),
-          label: const Text('Retry Stop'),
-        ),
-      );
-    }
-    if (controller.homeState == 'A') {
-      return SizedBox(
-        width: double.infinity,
-        child: FilledButton.icon(
-          key: const Key('start_duty_button'),
-          onPressed: controller.isActionLoading
-              ? null
-              : () async {
-                  final result = await controller.startDuty();
-                  if (!context.mounted) return;
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(result.message)));
-                },
-          icon: const Icon(Icons.play_arrow),
-          label: const Text('Start Duty'),
-        ),
-      );
-    }
-    if (controller.activeAssignment == null ||
-        controller.errorMessage != null) {
+    final member = controller.myAssignmentMember;
+    if (member == null ||
+        member.invitationStatus == 'not_invited' ||
+        member.invitationStatus == 'cancelled' ||
+        member.invitationStatus == 'declined') {
       return SizedBox(
         width: double.infinity,
         child: OutlinedButton.icon(
           key: const Key('refresh_status_button'),
           onPressed: controller.isRefreshing ? null : onRefresh,
-          icon: controller.isRefreshing
-              ? const SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.refresh),
-          label: const Text('Refresh Status'),
+          icon: const Icon(Icons.refresh),
+          label: const Text('Refresh'),
         ),
       );
     }
-    return Row(
+    if (member.invitationStatus == 'invited') {
+      return Row(
+        children: [
+          Expanded(
+            child: FilledButton.icon(
+              key: const Key('accept_cab_invitation_button'),
+              onPressed: controller.isActionLoading
+                  ? null
+                  : () => _accept(context),
+              icon: const Icon(Icons.check_circle_outline),
+              label: const Text('Accept'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: OutlinedButton.icon(
+              key: const Key('decline_cab_invitation_button'),
+              onPressed: controller.isActionLoading
+                  ? null
+                  : () => _decline(context),
+              icon: const Icon(Icons.close),
+              label: const Text('Decline'),
+            ),
+          ),
+        ],
+      );
+    }
+    final riderStatus = controller.myRiderRecord?.status ?? '';
+    if (riderStatus == 'arrived' ||
+        riderStatus == 'waiting' ||
+        riderStatus == 'driver_waiting') {
+      return SizedBox(
+        width: double.infinity,
+        child: FilledButton(
+          key: const Key('employee_ready_to_board_button'),
+          onPressed: controller.isActionLoading
+              ? null
+              : () => _readyToBoard(context),
+          child: const Text("I'M READY"),
+        ),
+      );
+    }
+    if (member.invitationStatus == 'accepted' &&
+        controller.activeAssignment == null) {
+      return const SizedBox(
+        width: double.infinity,
+        child: OutlinedButton(
+          onPressed: null,
+          child: Text('Accepted - waiting for trip'),
+        ),
+      );
+    }
+    return SizedBox(
+      width: double.infinity,
+      child: FilledButton.icon(
+        key: const Key('track_cab_button'),
+        onPressed: onOpenMap,
+        icon: const Icon(Icons.navigation_outlined),
+        label: const Text('Track Cab'),
+      ),
+    );
+  }
+
+  Future<void> _accept(BuildContext context) async {
+    var result = await controller.acceptTransportInvitation();
+    if (!context.mounted) return;
+    if (!result.isAccepted && result.message == 'Set your pickup location') {
+      final user = controller.currentUser;
+      final savedLat = user?.preferredPickupLatitude;
+      final savedLng = user?.preferredPickupLongitude;
+      final selection = await TransportLocationPicker.show(
+        context,
+        title: 'Set your pickup location',
+        initialSelection: savedLat == null || savedLng == null
+            ? null
+            : TransportLocationSelection(
+                label: user!.preferredPickupAddress,
+                address: user.preferredPickupAddress,
+                latitude: savedLat,
+                longitude: savedLng,
+              ),
+      );
+      if (selection == null || !context.mounted) return;
+      await controller.saveTravelLocations(
+        homeAddress: user?.homeAddress ?? '',
+        homeLatitude: user?.homeLatitude ?? selection.latitude,
+        homeLongitude: user?.homeLongitude ?? selection.longitude,
+        pickupAddress: selection.address,
+        pickupLatitude: selection.latitude,
+        pickupLongitude: selection.longitude,
+      );
+      result = await controller.acceptTransportInvitation(
+        pickupName: selection.label,
+        pickupAddress: selection.address,
+        pickupLatitude: selection.latitude,
+        pickupLongitude: selection.longitude,
+      );
+    }
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
+  }
+
+  Future<void> _decline(BuildContext context) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => SimpleDialog(
+        title: const Text('Decline cab invitation'),
+        children: [
+          for (final value in const [
+            'Not travelling today',
+            'Own transport',
+            'Leave / unavailable',
+            'Other',
+          ])
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(dialogContext, value),
+              child: Text(value),
+            ),
+        ],
+      ),
+    );
+    if (reason == null || !context.mounted) return;
+    final result = await controller.declineTransportInvitation(reason: reason);
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
+  }
+
+  Future<void> _readyToBoard(BuildContext context) async {
+    final result = await controller.markReadyAtPickup();
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(result.message)));
+  }
+}
+
+class _InvitationDetails extends StatelessWidget {
+  const _InvitationDetails({required this.controller});
+  final EmployeeTransportController controller;
+  @override
+  Widget build(BuildContext context) {
+    final m = controller.myAssignmentMember!, v = controller.assignedVehicle;
+    final vehicle = v?.registrationNumber.trim().isNotEmpty == true
+        ? v!.registrationNumber.trim()
+        : v?.vehicleNumber.trim().isNotEmpty == true
+        ? v!.vehicleNumber.trim()
+        : m.vehicleId.trim().isEmpty
+        ? 'Vehicle unavailable'
+        : m.vehicleId.trim();
+    final pickup = m.pickupName.trim().isNotEmpty
+        ? m.pickupName.trim()
+        : m.pickupAddress.trim().isNotEmpty
+        ? m.pickupAddress.trim()
+        : 'Pickup location required';
+    final office = m.officeName.trim().isNotEmpty
+        ? m.officeName.trim()
+        : m.officeAddress.trim().isNotEmpty
+        ? m.officeAddress.trim()
+        : 'Office destination unavailable';
+    final sent = m.invitedAt == null
+        ? 'Sent time unavailable'
+        : MaterialLocalizations.of(
+            context,
+          ).formatTimeOfDay(TimeOfDay.fromDateTime(m.invitedAt!.toLocal()));
+    return Column(
+      key: const Key('employee_invitation_details'),
       children: [
-        Expanded(
-          child: FilledButton.icon(
-            key: const Key('track_cab_button'),
-            onPressed: onOpenMap,
-            icon: const Icon(Icons.navigation_outlined, size: 18),
-            label: const Text('Track Cab'),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: OutlinedButton.icon(
-            key: const Key('open_map_button'),
-            onPressed: onOpenMap,
-            icon: const Icon(Icons.map_outlined, size: 18),
-            label: const Text('Open Map'),
-          ),
-        ),
+        _r('Driver', controller.driverDisplayName),
+        _r('Vehicle', vehicle),
+        _r('Office', office),
+        _r('Pickup', pickup),
+        if (m.invitationStatus == 'invited') _r('Sent', sent),
       ],
     );
   }
+
+  Widget _r(String l, String v) => Padding(
+    padding: const EdgeInsets.only(top: 7),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(width: 72, child: Text(l, style: _HomeText.bodyMuted)),
+        Expanded(child: Text(v, style: _HomeText.bodyMuted)),
+      ],
+    ),
+  );
 }
 
 class _KpiGrid extends StatelessWidget {
@@ -605,9 +764,7 @@ class _MapPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final points = _points(controller);
-    final center = points.isNotEmpty
-        ? points.first.$2
-        : const LatLng(20.5937, 78.9629);
+    final center = points.isNotEmpty ? points.first.$2 : const LatLng(0, 0);
     final markers = {
       for (final point in points)
         Marker(
@@ -806,7 +963,7 @@ class _PickupTile extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${isMe ? 'You' : progress.passengerDisplayName} · Stop ${progress.pickupSequence}',
+                  '${isMe ? 'You' : progress.passengerDisplayName} Ã‚Â· Stop ${progress.pickupSequence}',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: _HomeText.title,
@@ -1023,6 +1180,7 @@ class _StatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      key: Key('employee_status_${label.toLowerCase().replaceAll(' ', '_')}'),
       constraints: const BoxConstraints(maxWidth: 104),
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
@@ -1124,14 +1282,14 @@ class _Kpi {
 class _HomeColors {
   const _HomeColors._();
 
-  static const background = Color(0xFF131313);
-  static const card = Color(0xFF1F1F1F);
-  static const hero = Color(0xFF2A2A2A);
-  static const avatar = Color(0xFF353535);
-  static const border = Color(0xFF414755);
-  static const primary = Color(0xFFE2E2E2);
-  static const muted = Color(0xFFC1C6D7);
-  static const accent = Color(0xFFADC6FF);
+  static const background = Color(0xFF051424);
+  static const card = Color(0xFF122131);
+  static const hero = Color(0xFF1C2B3C);
+  static const avatar = Color(0xFF273647);
+  static const border = Color(0xFF3A494B);
+  static const primary = Color(0xFFD4E4FA);
+  static const muted = Color(0xFFB9CACB);
+  static const accent = Color(0xFF00F2FF);
   static const green = Color(0xFF4AE183);
   static const amber = Color(0xFFEEC209);
   static const error = Color(0xFFFFB4AB);

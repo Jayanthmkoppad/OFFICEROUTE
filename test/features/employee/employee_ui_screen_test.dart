@@ -114,7 +114,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Route not configured'), findsOneWidget);
+      expect(find.text('No transport invitation for today.'), findsWidgets);
       expect(find.byKey(const Key('employee_transport_hero')), findsOneWidget);
       await tester.dragUntilVisible(
         find.text("TODAY'S EMPLOYEES"),
@@ -123,10 +123,49 @@ void main() {
       );
       expect(find.text("TODAY'S EMPLOYEES"), findsOneWidget);
       expect(find.text('No active route for today.'), findsOneWidget);
+      expect(find.byKey(const Key('refresh_status_button')), findsOneWidget);
       expect(find.textContaining('Setup Test Route'), findsNothing);
     });
 
-    // 2. No-route Home hides distance cards
+    testWidgets('INVITED state shows truthful response actions', (
+      tester,
+    ) async {
+      final controller = _createTestController(
+        attendance: _checkedInAttendance(),
+        member: const CabAssignmentMemberModel(
+          id: '2026-07-22_test_uid',
+          dateKey: '2026-07-22',
+          userId: 'test_uid',
+          role: 'employee',
+          driverId: 'driver_1',
+          vehicleId: 'vehicle_1',
+          status: 'invited',
+          invitationStatus: 'invited',
+          officeName: 'Operations Office',
+          officeAddress: 'Operations Campus',
+          officeLatitude: 15.36,
+          officeLongitude: 75.12,
+        ),
+      );
+
+      await tester.pumpWidget(
+        _testApp(EmployeeHomeScreen(onNavigateToMap: () {}), controller),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('CAB INVITATION'), findsOneWidget);
+      expect(find.text('Pending response'), findsOneWidget);
+      expect(
+        find.byKey(const Key('accept_cab_invitation_button')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const Key('decline_cab_invitation_button')),
+        findsOneWidget,
+      );
+      expect(find.text('Request Pickup'), findsNothing);
+      expect(find.text('Mark Ready'), findsNothing);
+    }); // 2. No-route Home hides distance cards
     testWidgets('2. No-route Home hides distance cards', (tester) async {
       final controller = _createTestController(
         attendance: _checkedInAttendance(),
@@ -160,39 +199,20 @@ void main() {
       expect(find.text('Trip Passenger Progress'), findsNothing);
     });
 
-    // 4. Missing pickup explains Administrator configuration
-    testWidgets('4. Missing pickup explains Administrator configuration', (
+    // A missing saved pickup is allowed until an invitation is accepted.
+    testWidgets('4. no invitation does not fabricate pickup configuration', (
       tester,
     ) async {
       final controller = _createTestController(
         attendance: _checkedInAttendance(),
-        member: const CabAssignmentMemberModel(
-          id: 'mem_1',
-          assignmentId: 'assign_1',
-          userId: 'test_uid',
-          pickupName: '',
-          pickupAddress: '',
-          pickupLatitude: null,
-          pickupLongitude: null,
-          status: 'assigned',
-          updatedAt: null,
-        ),
       );
-
       await tester.pumpWidget(
         _testApp(EmployeeHomeScreen(onNavigateToMap: () {}), controller),
       );
       await tester.pumpAndSettle();
-
-      expect(find.text('Pickup point not configured'), findsOneWidget);
-      expect(
-        find.text(
-          'Ask an Administrator to configure your permanent pickup location.',
-        ),
-        findsOneWidget,
-      );
+      expect(find.text('No transport invitation for today.'), findsWidgets);
+      expect(find.textContaining('Administrator'), findsNothing);
     });
-
     // 5. Offline state does not say Approval
     testWidgets('5. Offline state does not say Approval', (tester) async {
       final controller = _createTestController(
@@ -289,7 +309,7 @@ void main() {
       await tester.tap(find.byKey(const Key('refresh_status_button')));
       await tester.pumpAndSettle();
       expect(refreshCount, 1);
-      expect(find.text('Today’s status is up to date.'), findsOneWidget);
+      expect(find.textContaining('up to date'), findsOneWidget);
     });
 
     testWidgets('11. no-route state keeps one refresh action', (tester) async {
@@ -317,6 +337,10 @@ void main() {
           assignmentId: 'assign_1',
           dateKey: '2026-07-22',
           userId: 'test_uid',
+          driverId: 'driver_1',
+          vehicleId: 'vehicle_1',
+          status: 'claimed',
+          invitationStatus: 'trip_active',
           pickupName: 'Office Gate',
           pickupAddress: '123 Main St',
           pickupLatitude: 28.6139,
@@ -340,7 +364,7 @@ void main() {
       expect(openedMap, isTrue);
     });
 
-    testWidgets('13. assigned state labels unavailable KPI values honestly', (
+    testWidgets('13. active invitation uses truthful ETA and distance labels', (
       tester,
     ) async {
       final controller = _createTestController(
@@ -350,6 +374,10 @@ void main() {
           assignmentId: 'assign_1',
           dateKey: '2026-07-22',
           userId: 'test_uid',
+          driverId: 'driver_1',
+          vehicleId: 'vehicle_1',
+          status: 'claimed',
+          invitationStatus: 'trip_active',
           pickupName: 'Office Gate',
           pickupAddress: '123 Main St',
           pickupLatitude: 28.6139,
@@ -364,12 +392,9 @@ void main() {
       await tester.pumpWidget(
         _testApp(EmployeeHomeScreen(onNavigateToMap: () {}), controller),
       );
-
-      expect(find.text('MY DISTANCE'), findsOneWidget);
-      expect(find.text('MY ETA'), findsOneWidget);
-      expect(find.text('Location unavailable'), findsOneWidget);
-      expect(find.text('Traffic ETA unavailable'), findsOneWidget);
-      expect(find.text('CAB TO YOUR PICKUP'), findsOneWidget);
+      expect(find.text('DRIVER APPROACHING'), findsOneWidget);
+      expect(find.text('ETA unavailable'), findsOneWidget);
+      expect(find.textContaining('CAB TO YOUR PICKUP'), findsNothing);
     });
 
     testWidgets('14. route timeline is ordered and privacy-safe', (
@@ -382,6 +407,8 @@ void main() {
           assignmentId: 'assign_1',
           dateKey: '2026-07-22',
           userId: 'test_uid',
+          driverId: 'driver_1',
+          vehicleId: 'vehicle_1',
           pickupName: 'Office Gate',
           pickupAddress: 'My private pickup',
           pickupLatitude: 28.6139,
@@ -545,6 +572,8 @@ void main() {
           id: 'mem_1',
           assignmentId: 'assign_1',
           userId: 'test_uid',
+          driverId: 'driver_1',
+          vehicleId: 'vehicle_1',
           pickupName: 'Office Gate',
           pickupAddress: '123 Main St',
           pickupLatitude: 28.6139,

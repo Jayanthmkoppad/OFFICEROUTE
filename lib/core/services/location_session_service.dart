@@ -76,10 +76,7 @@ class LocationSessionService {
       status: LocationTrackingPolicy.statusPaused,
       pausedAt: DateTime.now(),
     );
-    return _saveSession(
-      updated,
-      method: 'LocationSessionService.pauseSession',
-    );
+    return _saveSession(updated, method: 'LocationSessionService.pauseSession');
   }
 
   static Future<LocationSessionModel> resumeSession(
@@ -105,10 +102,7 @@ class LocationSessionService {
       stoppedAt: DateTime.now(),
       stopReason: stopReason,
     );
-    return _saveSession(
-      updated,
-      method: 'LocationSessionService.stopSession',
-    );
+    return _saveSession(updated, method: 'LocationSessionService.stopSession');
   }
 
   static Future<void> updateLastLocation({

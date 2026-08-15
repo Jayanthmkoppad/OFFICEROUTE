@@ -1,15 +1,18 @@
-import 'dart:async';
+﻿import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../core/controllers/cab_management_controller.dart';
-import '../../core/models/cab_assignment_member_model.dart';
-import '../../core/models/cab_assignment_model.dart';
+import '../../core/models/cab_trip_cancellation.dart';
 import '../../core/models/cab_trip_event_model.dart';
 import '../../core/models/cab_vehicle_model.dart';
 import '../../core/models/live_location_model.dart';
+import '../../core/models/office_destination.dart';
+import '../../core/services/cab_trip_service.dart';
+import '../../core/services/cab_assignment_service.dart';
 import '../../core/services/location_tracking_policy.dart';
 import '../map/controllers/location_controller.dart';
+import '../cab_tracking/controllers/cab_tracking_controller.dart';
 import '../notifications/services/notification_service.dart';
 import 'controllers/cab_driver_controller.dart';
 
@@ -73,58 +76,16 @@ class CabDriverWorkflowSupport {
       }
     }
 
-    return _createFallbackVehicleForDriver(data);
-  }
-
-  static Future<CabVehicleModel?> _createFallbackVehicleForDriver(
-    CabDriverOperations data,
-  ) async {
-    final uid = data.driver.uid.trim();
-    if (uid.isEmpty) return null;
-
-    final profileVehicle = data.driver.vehicleNumber.trim();
-    final suffixLength = uid.length < 6 ? uid.length : 6;
-    final fallbackNumber = profileVehicle.isNotEmpty
-        ? profileVehicle
-        : 'CAB-${uid.substring(0, suffixLength).toUpperCase()}';
-
-    final draft = CabVehicleModel(
-      id: fallbackNumber,
-      vehicleNumber: fallbackNumber,
-      vehicleModel: 'Office Cab',
-      registrationNumber: profileVehicle.isEmpty
-          ? fallbackNumber
-          : profileVehicle,
-      capacity: 4,
-      status: 'available',
-      driverId: uid,
-      remarks:
-          'Auto-created during driver Start Duty. Admin can update vehicle master.',
-    );
-
-    try {
-      final vehicleId = await CabManagementController.createVehicle(draft);
-      return CabVehicleModel(
-        id: vehicleId,
-        vehicleNumber: draft.vehicleNumber,
-        vehicleModel: draft.vehicleModel,
-        registrationNumber: draft.registrationNumber,
-        capacity: draft.capacity,
-        status: draft.status,
-        driverId: draft.driverId,
-        remarks: draft.remarks,
-      );
-    } catch (_) {
-      // Some Firestore rules may not allow cab drivers to create vehicle master
-      // records. Start Duty must still work, so we keep a safe operational
-      // fallback vehicle id for shift/assignment records.
-      return draft;
-    }
+    return null;
   }
 
   static Future<void> startDuty(
     CabDriverOperations data, {
     required String vehicleId,
+    double startOdometer = 0.0,
+    int batteryPercentage = 100,
+    String vehicleCondition = 'Good',
+    required OfficeDestination officeDestination,
   }) async {
     if (data.dutyActive) return;
     final normalizedVehicleId = vehicleId.trim();
@@ -132,101 +93,73 @@ class CabDriverWorkflowSupport {
       throw StateError('Select a valid cab before starting duty.');
     }
 
-    final fetchedVehicle = await CabManagementController.getVehicle(
+    final vehicle = await CabManagementController.getVehicle(
       normalizedVehicleId,
     );
-    final vehicle =
-        fetchedVehicle ??
-        CabVehicleModel(
-          id: normalizedVehicleId,
-          vehicleNumber: normalizedVehicleId,
-          vehicleModel: 'Office Cab',
-          registrationNumber: normalizedVehicleId,
-          capacity: 4,
-          status: 'available',
-          driverId: data.driver.uid,
-          remarks: 'Operational fallback cab for Start Duty.',
-        );
+    if (vehicle == null) {
+      throw StateError('The selected cab is not configured.');
+    }
     if (vehicle.status.trim().toLowerCase() == 'inactive') {
       throw StateError('The selected cab is inactive. Choose another cab.');
     }
 
-    final now = DateTime.now();
-    final today = CabDriverController.dateKey(now);
-    CabAssignmentModel assignment;
+    await CabDriverController.startDuty(
+      data,
+      vehicleId: vehicle.id,
+      startOdometer: startOdometer,
+      batteryPercentage: batteryPercentage,
+      vehicleCondition: vehicleCondition,
+      officeDestination: officeDestination,
+    );
+  }
 
-    final existing = data.todayAssignment;
-    if (existing == null || existing.id.trim().isEmpty) {
-      final draft = CabAssignmentModel(
-        dateKey: today,
-        assignmentDate: now,
-        driverId: data.driver.uid,
-        vehicleId: vehicle.id,
-        employeeIds: const <String>[],
-        officeName: data.driver.branch.trim().isEmpty
-            ? 'Office'
-            : data.driver.branch.trim(),
-        officeAddress: '',
-        officeLatitude: null,
-        officeLongitude: null,
-        status: 'active',
-        assignedBy: data.driver.uid,
-        assignedAt: now,
-        updatedAt: now,
-        remarks: 'Operational assignment created automatically at Start Duty.',
+  static Future<String> claimReadyRequestsAndStartTrip(
+    CabDriverOperations data, {
+    required List<String> memberIds,
+  }) async {
+    final destination = data.officeDestination;
+    final vehicleId = data.vehicle?.id.trim() ?? '';
+    if (!CabDriverController.canStartTrip(data) ||
+        destination == null ||
+        vehicleId.isEmpty ||
+        memberIds.isEmpty) {
+      throw StateError(
+        'Trip conditions changed. Refresh requests before starting.',
       );
-      final assignmentId = await CabManagementController.createAssignment(
-        draft,
-      );
-      assignment = draft.copyWith(id: assignmentId);
-    } else {
-      assignment = existing.copyWith(
-        vehicleId: vehicle.id,
-        status: existing.status == 'completed' ? 'active' : existing.status,
-        assignedBy: existing.assignedBy.trim().isEmpty
-            ? data.driver.uid
-            : existing.assignedBy,
-        updatedAt: now,
-      );
-      await CabManagementController.updateAssignment(assignment);
     }
 
-    await CabManagementController.upsertAssignmentMembers([
-      CabAssignmentMemberModel(
-        id: '${assignment.dateKey}_${data.driver.uid}',
-        assignmentId: assignment.id,
-        dateKey: assignment.dateKey,
-        userId: data.driver.uid,
-        role: 'driver',
-        driverId: data.driver.uid,
-        vehicleId: vehicle.id,
-        status: 'active',
-        createdAt: now,
-        updatedAt: now,
-      ),
-    ]);
-
-    final adjustedAssignments = <CabAssignmentModel>[
-      ...data.assignments.where((item) => item.id != assignment.id),
-      assignment,
-    ];
-    final adjusted = CabDriverOperations(
-      driver: data.driver,
-      todayAssignment: assignment,
-      vehicle: vehicle,
-      shift: data.shift,
-      assignments: adjustedAssignments,
-      trips: data.trips,
-      activeTrip: data.activeTrip,
-      members: data.members,
-      riders: data.riders,
-      events: data.events,
-      employees: data.employees,
-      locations: data.locations,
-      loadedAt: data.loadedAt,
+    final dateKey = CabDriverController.dateKey(DateTime.now());
+    final assignmentId = 'plan_${dateKey}_${data.driver.uid}';
+    await _prepareForCabTrip(data.driver.uid);
+    final session = await CabTrackingController.startDriverSession(
+      driverId: data.driver.uid,
+      assignmentId: assignmentId,
     );
-
-    await CabDriverController.startDuty(adjusted);
+    try {
+      final tripId =
+          await CabAssignmentService.claimMembersAndCreateTripTransaction(
+            driverId: data.driver.uid,
+            vehicleId: vehicleId,
+            dateKey: dateKey,
+            memberIds: memberIds,
+            officeName: destination.name,
+            officeAddress: destination.address,
+            officeLatitude: destination.latitude,
+            officeLongitude: destination.longitude,
+            branch: data.driver.branch,
+            serviceCentre: data.driver.serviceCentre,
+            activeLocationSessionId: session.id,
+          );
+      await _fieldDutySubscription?.cancel();
+      _fieldDutySubscription =
+          await CabTrackingController.startDriverLiveLocationUpdates(
+            session: session,
+          );
+      return tripId;
+    } catch (_) {
+      await CabTrackingController.stopDriverSession(session: session);
+      rethrow;
+    }
   }
 
   static Future<void> startTripWithEmployees(
@@ -271,6 +204,45 @@ class CabDriverWorkflowSupport {
         );
   }
 
+  static Future<void> cancelTrip(
+    CabDriverOperations data,
+    CabTripCancellation cancellation,
+  ) async {
+    final trip = data.activeTrip;
+    if (trip == null) {
+      throw StateError('No active trip is available to cancel.');
+    }
+    await CabTripService.cancelTripByDriver(
+      tripId: trip.id,
+      driverId: data.driver.uid,
+      cancellation: cancellation,
+    );
+
+    var session = await LocationController.loadActiveLocationSession(
+      data.driver.uid,
+    );
+    if (session != null &&
+        session.trackingReason == LocationTrackingPolicy.reasonCabTrip) {
+      await LocationController.stopLocationSession(
+        session: session,
+        stopReason: 'cab_trip_cancelled',
+      );
+      session = null;
+    }
+    if (data.dutyActive) {
+      session ??= await LocationController.startLocationSession(
+        userId: data.driver.uid,
+        trackingReason: LocationTrackingPolicy.reasonFieldDuty,
+        metadata: <String, dynamic>{'assignmentId': trip.assignmentId},
+      );
+      await _fieldDutySubscription?.cancel();
+      _fieldDutySubscription =
+          await LocationController.startForegroundLiveLocationUpdates(
+            session: session,
+          );
+    }
+  }
+
   static Future<void> endDuty(CabDriverOperations data) async {
     await CabDriverController.endDuty(data);
     await _fieldDutySubscription?.cancel();
@@ -284,6 +256,11 @@ class CabDriverWorkflowSupport {
         stopReason: 'driver_duty_ended',
       );
     }
+  }
+
+  static Future<void> releaseSession() async {
+    await _fieldDutySubscription?.cancel();
+    _fieldDutySubscription = null;
   }
 
   static Future<void> _prepareForCabTrip(String driverId) async {
@@ -354,6 +331,9 @@ class CabDriverWorkflowSupport {
       title: 'Cab pickup skipped',
       body: normalizedReason,
       type: 'cab_pickup_skipped',
+      tripId: trip.id,
+      assignmentId: trip.assignmentId,
+      driverId: data.driver.uid,
     );
 
     final remaining =
@@ -372,6 +352,9 @@ class CabDriverWorkflowSupport {
         title: 'Cab is arriving',
         body: 'Your cab is proceeding to your pickup. Please be ready.',
         type: 'cab_arriving',
+        tripId: trip.id,
+        assignmentId: trip.assignmentId,
+        driverId: data.driver.uid,
       );
     }
   }
@@ -415,6 +398,9 @@ class CabDriverWorkflowSupport {
         title: 'Reached office',
         body: 'You have reached ${assignment.officeName}.',
         type: 'cab_dropped',
+        tripId: trip.id,
+        assignmentId: trip.assignmentId,
+        driverId: data.driver.uid,
       );
     }
 

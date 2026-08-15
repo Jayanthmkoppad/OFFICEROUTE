@@ -91,9 +91,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         elevation: 0,
         title: Text(
           'Personal Operations Center',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                letterSpacing: 0,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.headlineSmall?.copyWith(letterSpacing: 0),
         ),
         actions: [
           IconButton(
@@ -172,11 +172,16 @@ class _ProfileContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final todayVisits = data.visits.where((v) => _isVisitToday(v, now)).toList();
-    final upcoming = data.visits.where((v) {
-      final date = v.preferredVisitDate;
-      return date != null && date.isAfter(now) && v.status != 'completed';
-    }).toList()..sort((a, b) => a.preferredVisitDate!.compareTo(b.preferredVisitDate!));
+    final todayVisits = data.visits
+        .where((v) => _isVisitToday(v, now))
+        .toList();
+    final upcoming =
+        data.visits.where((v) {
+          final date = v.preferredVisitDate;
+          return date != null && date.isAfter(now) && v.status != 'completed';
+        }).toList()..sort(
+          (a, b) => a.preferredVisitDate!.compareTo(b.preferredVisitDate!),
+        );
     final unread = data.notifications.where((n) => !n.isRead).length;
     final completed = todayVisits.where((v) => v.status == 'completed').length;
     final pending = todayVisits.length - completed;
@@ -220,18 +225,87 @@ class _ProfileContent extends StatelessWidget {
               initiallyExpanded: true,
               child: _MetricGrid(
                 metrics: [
-                  _Metric('Attendance', attendance?.status ?? 'Not started', Icons.badge_outlined, () => _push(context, const AttendanceScreen())),
-                  _Metric('Working Hours', _duration(working), Icons.schedule, () => _push(context, const AttendanceScreen())),
-                  _Metric("Today's Visits", '${todayVisits.length}', Icons.route_outlined, () => _push(context, const CustomerVisitScreen())),
-                  _Metric('Pending Visits', '$pending', Icons.pending_actions_outlined, () => _push(context, const CustomerVisitScreen())),
-                  _Metric('Completed Visits', '$completed', Icons.task_alt, () => _push(context, const CustomerVisitScreen())),
-                  _Metric('Travel Distance', '${distance.toStringAsFixed(1)} km', Icons.alt_route, () => _push(context, const MapScreen())),
-                  _Metric('Break Time', _duration(breaks), Icons.free_breakfast_outlined, () => _push(context, const AttendanceScreen())),
-                  _Metric('Overtime', 'Not available', Icons.more_time, () => _unsupported(context, 'No approved working-hours or overtime policy exists.')),
-                  _Metric('Notifications', '$unread unread', Icons.notifications_outlined, () => _push(context, const NotificationCenterScreen())),
-                  _Metric('Approvals', 'Not available', Icons.approval_outlined, () => _unsupported(context, 'Approval backend is not available in Phase 1.')),
-                  _Metric('Expense Summary', 'INR ${expenseEstimate.toStringAsFixed(0)} estimate', Icons.receipt_long_outlined, () => _push(context, const CustomerVisitScreen())),
-                  _Metric('Pending Tasks', 'Not available', Icons.task_outlined, () => _unsupported(context, 'A task backend is not implemented.')),
+                  _Metric(
+                    'Attendance',
+                    attendance?.status ?? 'Not started',
+                    Icons.badge_outlined,
+                    () => _push(context, const AttendanceScreen()),
+                  ),
+                  _Metric(
+                    'Working Hours',
+                    _duration(working),
+                    Icons.schedule,
+                    () => _push(context, const AttendanceScreen()),
+                  ),
+                  _Metric(
+                    "Today's Visits",
+                    '${todayVisits.length}',
+                    Icons.route_outlined,
+                    () => _push(context, const CustomerVisitScreen()),
+                  ),
+                  _Metric(
+                    'Pending Visits',
+                    '$pending',
+                    Icons.pending_actions_outlined,
+                    () => _push(context, const CustomerVisitScreen()),
+                  ),
+                  _Metric(
+                    'Completed Visits',
+                    '$completed',
+                    Icons.task_alt,
+                    () => _push(context, const CustomerVisitScreen()),
+                  ),
+                  _Metric(
+                    'Travel Distance',
+                    '${distance.toStringAsFixed(1)} km',
+                    Icons.alt_route,
+                    () => _push(context, const MapScreen()),
+                  ),
+                  _Metric(
+                    'Break Time',
+                    _duration(breaks),
+                    Icons.free_breakfast_outlined,
+                    () => _push(context, const AttendanceScreen()),
+                  ),
+                  _Metric(
+                    'Overtime',
+                    'Not available',
+                    Icons.more_time,
+                    () => _unsupported(
+                      context,
+                      'No approved working-hours or overtime policy exists.',
+                    ),
+                  ),
+                  _Metric(
+                    'Notifications',
+                    '$unread unread',
+                    Icons.notifications_outlined,
+                    () => _push(context, const NotificationCenterScreen()),
+                  ),
+                  _Metric(
+                    'Approvals',
+                    'Not available',
+                    Icons.approval_outlined,
+                    () => _unsupported(
+                      context,
+                      'Approval backend is not available in Phase 1.',
+                    ),
+                  ),
+                  _Metric(
+                    'Expense Summary',
+                    'INR ${expenseEstimate.toStringAsFixed(0)} estimate',
+                    Icons.receipt_long_outlined,
+                    () => _push(context, const CustomerVisitScreen()),
+                  ),
+                  _Metric(
+                    'Pending Tasks',
+                    'Not available',
+                    Icons.task_outlined,
+                    () => _unsupported(
+                      context,
+                      'A task backend is not implemented.',
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -239,7 +313,10 @@ class _ProfileContent extends StatelessWidget {
               title: 'My Performance',
               icon: Icons.insights_outlined,
               initiallyExpanded: true,
-              trailing: _RangeSelector(value: performanceRange, onChanged: onRangeChanged),
+              trailing: _RangeSelector(
+                value: performanceRange,
+                onChanged: onRangeChanged,
+              ),
               child: _PerformanceGrid(
                 data: data,
                 now: now,
@@ -251,7 +328,11 @@ class _ProfileContent extends StatelessWidget {
               title: 'My Operations',
               icon: Icons.work_outline,
               initiallyExpanded: true,
-              child: _MyOperations(data: data, todayVisits: todayVisits, upcoming: upcoming),
+              child: _MyOperations(
+                data: data,
+                todayVisits: todayVisits,
+                upcoming: upcoming,
+              ),
             ),
             _OperationsSection(
               title: 'Organization Overview',
@@ -328,14 +409,21 @@ class _IdentityHeader extends StatelessWidget {
   final DateTime now;
   final VoidCallback onReload;
 
-  const _IdentityHeader({required this.data, required this.now, required this.onReload});
+  const _IdentityHeader({
+    required this.data,
+    required this.now,
+    required this.onReload,
+  });
 
   @override
   Widget build(BuildContext context) {
     final user = data.user;
     final live = data.liveLocation;
-    final isOnline = live != null && now.difference(live.updatedAt).inMinutes <= 10;
-    final visit = data.visits.where((v) => v.status == 'checked_in').firstOrNull;
+    final isOnline =
+        live != null && now.difference(live.updatedAt).inMinutes <= 10;
+    final visit = data.visits
+        .where((v) => v.status == 'checked_in')
+        .firstOrNull;
     final duty = _dutyStatus(data.todayAttendance?.status, visit != null);
     final completion = _profileCompletion(user);
     final lastSync = <DateTime>[
@@ -358,17 +446,43 @@ class _IdentityHeader extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(user.name.isEmpty ? 'Employee' : user.name, style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontSize: 22, letterSpacing: 0)),
+                    Text(
+                      user.name.isEmpty ? 'Employee' : user.name,
+                      style: Theme.of(context).textTheme.headlineMedium
+                          ?.copyWith(fontSize: 22, letterSpacing: 0),
+                    ),
                     const SizedBox(height: 4),
-                    Text(user.email, style: Theme.of(context).textTheme.bodySmall?.copyWith(letterSpacing: 0)),
+                    Text(
+                      user.email,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(letterSpacing: 0),
+                    ),
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 6,
                       runSpacing: 6,
                       children: [
-                        PremiumStatusChip(label: duty, color: duty == 'Off Duty' ? AppColors.textDisabled : AppColors.success),
-                        PremiumStatusChip(label: isOnline ? 'Online' : 'Offline', color: isOnline ? AppColors.online : AppColors.offline),
-                        PremiumStatusChip(label: data.locationPermission.serviceEnabled ? 'GPS On' : 'GPS Off', color: data.locationPermission.serviceEnabled ? AppColors.info : AppColors.warning),
+                        PremiumStatusChip(
+                          label: duty,
+                          color: duty == 'Off Duty'
+                              ? AppColors.textDisabled
+                              : AppColors.success,
+                        ),
+                        PremiumStatusChip(
+                          label: isOnline ? 'Online' : 'Offline',
+                          color: isOnline
+                              ? AppColors.online
+                              : AppColors.offline,
+                        ),
+                        PremiumStatusChip(
+                          label: data.locationPermission.serviceEnabled
+                              ? 'GPS On'
+                              : 'GPS Off',
+                          color: data.locationPermission.serviceEnabled
+                              ? AppColors.info
+                              : AppColors.warning,
+                        ),
                       ],
                     ),
                   ],
@@ -382,24 +496,45 @@ class _IdentityHeader extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          _InfoGrid(items: [
-            ('Employee ID', user.employeeCode.trim().isEmpty ? user.uid : user.employeeCode),
-            ('Role', user.role.isEmpty ? 'Not configured' : user.role),
-            ('Designation', _configured(user.designation)),
-            ('Department', _configured(user.department)),
-            ('Branch', _configured(user.branch)),
-            ('Reporting Manager', _configured(user.reportingManager)),
-            ('Joining Date', user.joiningDate == null ? 'Not configured' : _dateOnly(user.joiningDate!)),
-            ('Experience', _experience(user.joiningDate, now)),
-            ('Emergency', _configured(user.emergencyContact)),
-            ('Blood Group', _configured(user.bloodGroup)),
-            ('Skills', user.skills.isEmpty ? 'Not configured' : user.skills.join(', ')),
-            ('Certifications', user.certifications.isEmpty ? 'Not configured' : '${user.certifications.length}'),
-            ('Current Status', duty),
-            ('Current Visit', visit == null ? 'No active visit' : visit.customerName),
-            ('Profile Completion', '$completion%'),
-            ('Last Sync', _dateTime(lastSync)),
-          ]),
+          _InfoGrid(
+            items: [
+              (
+                'Employee ID',
+                user.employeeCode.trim().isEmpty ? user.uid : user.employeeCode,
+              ),
+              ('Role', user.role.isEmpty ? 'Not configured' : user.role),
+              ('Designation', _configured(user.designation)),
+              ('Department', _configured(user.department)),
+              ('Branch', _configured(user.branch)),
+              ('Reporting Manager', _configured(user.reportingManager)),
+              (
+                'Joining Date',
+                user.joiningDate == null
+                    ? 'Not configured'
+                    : _dateOnly(user.joiningDate!),
+              ),
+              ('Experience', _experience(user.joiningDate, now)),
+              ('Emergency', _configured(user.emergencyContact)),
+              ('Blood Group', _configured(user.bloodGroup)),
+              (
+                'Skills',
+                user.skills.isEmpty ? 'Not configured' : user.skills.join(', '),
+              ),
+              (
+                'Certifications',
+                user.certifications.isEmpty
+                    ? 'Not configured'
+                    : '${user.certifications.length}',
+              ),
+              ('Current Status', duty),
+              (
+                'Current Visit',
+                visit == null ? 'No active visit' : visit.customerName,
+              ),
+              ('Profile Completion', '$completion%'),
+              ('Last Sync', _dateTime(lastSync)),
+            ],
+          ),
         ],
       ),
     );
@@ -424,7 +559,9 @@ class _SmartSummary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final lines = <String>[
-      attendance ? 'Attendance is active today.' : 'Attendance has not started today.',
+      attendance
+          ? 'Attendance is active today.'
+          : 'Attendance has not started today.',
       'Completed $completedVisits visit${completedVisits == 1 ? '' : 's'} today.',
       'Planned travel is ${distance.toStringAsFixed(1)} km.',
       '$unread unread notification${unread == 1 ? '' : 's'}.',
@@ -436,9 +573,19 @@ class _SmartSummary extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const PremiumIconChip(icon: Icons.auto_awesome_outlined, color: AppColors.info),
+          const PremiumIconChip(
+            icon: Icons.auto_awesome_outlined,
+            color: AppColors.info,
+          ),
           const SizedBox(width: 12),
-          Expanded(child: Text(lines.join('  •  '), style: Theme.of(context).textTheme.bodyMedium?.copyWith(height: 1.45, letterSpacing: 0))),
+          Expanded(
+            child: Text(
+              lines.join('  •  '),
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(height: 1.45, letterSpacing: 0),
+            ),
+          ),
         ],
       ),
     );
@@ -453,7 +600,14 @@ class _OperationsSection extends StatelessWidget {
   final Widget? trailing;
   final ExpansibleController? controller;
 
-  const _OperationsSection({required this.title, required this.icon, required this.child, this.initiallyExpanded = false, this.trailing, this.controller});
+  const _OperationsSection({
+    required this.title,
+    required this.icon,
+    required this.child,
+    this.initiallyExpanded = false,
+    this.trailing,
+    this.controller,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -466,10 +620,23 @@ class _OperationsSection extends StatelessWidget {
           child: ExpansionTile(
             controller: controller,
             initiallyExpanded: initiallyExpanded,
-            tilePadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+            tilePadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 2,
+            ),
             childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            leading: Icon(icon, size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
-            title: Text(title, style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontWeight: FontWeight.w700, letterSpacing: 0)),
+            leading: Icon(
+              icon,
+              size: 20,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+            title: Text(
+              title,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0,
+              ),
+            ),
             trailing: trailing ?? const Icon(Icons.expand_more, size: 20),
             children: [const Divider(height: 12), child],
           ),
@@ -493,15 +660,28 @@ class _MetricGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (context, constraints) {
-      final columns = constraints.maxWidth >= 900 ? 4 : constraints.maxWidth >= 560 ? 3 : 2;
-      final width = (constraints.maxWidth - (columns - 1) * 8) / columns;
-      return Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: metrics.map((metric) => SizedBox(width: width, child: _MetricTile(metric: metric))).toList(),
-      );
-    });
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final columns = constraints.maxWidth >= 900
+            ? 4
+            : constraints.maxWidth >= 560
+            ? 3
+            : 2;
+        final width = (constraints.maxWidth - (columns - 1) * 8) / columns;
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: metrics
+              .map(
+                (metric) => SizedBox(
+                  width: width,
+                  child: _MetricTile(metric: metric),
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
   }
 }
 
@@ -521,14 +701,34 @@ class _MetricTile extends StatelessWidget {
         child: Container(
           constraints: const BoxConstraints(minHeight: 82),
           padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(border: Border.all(color: colors.outlineVariant), borderRadius: BorderRadius.circular(12)),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Icon(metric.icon, size: 18, color: colors.onSurfaceVariant),
-            const SizedBox(height: 8),
-            Text(metric.value, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: 14, letterSpacing: 0)),
-            const SizedBox(height: 2),
-            Text(metric.label, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11, letterSpacing: 0)),
-          ]),
+          decoration: BoxDecoration(
+            border: Border.all(color: colors.outlineVariant),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Icon(metric.icon, size: 18, color: colors.onSurfaceVariant),
+              const SizedBox(height: 8),
+              Text(
+                metric.value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodyLarge?.copyWith(fontSize: 14, letterSpacing: 0),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                metric.label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(fontSize: 11, letterSpacing: 0),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -583,14 +783,33 @@ class _PerformanceGrid extends StatelessWidget {
       _PerformanceRange.week => DateTime(now.year, now.month, now.day - 13),
       _PerformanceRange.month => DateTime(now.year, now.month - 1),
     };
-    final attendance = data.attendance.where((r) => r.date != null && !r.date!.isBefore(start) && r.date!.isBefore(endExclusive)).toList();
-    final visits = data.visits.where((v) => !_visitDate(v).isBefore(start) && _visitDate(v).isBefore(endExclusive)).toList();
+    final attendance = data.attendance
+        .where(
+          (r) =>
+              r.date != null &&
+              !r.date!.isBefore(start) &&
+              r.date!.isBefore(endExclusive),
+        )
+        .toList();
+    final visits = data.visits
+        .where(
+          (v) =>
+              !_visitDate(v).isBefore(start) &&
+              _visitDate(v).isBefore(endExclusive),
+        )
+        .toList();
     final completed = visits.where((v) => v.status == 'completed').length;
     final completion = visits.isEmpty ? 0.0 : completed / visits.length;
     final present = attendance.where((r) => r.checkInTime != null).length;
-    final attendanceRate = attendance.isEmpty ? 0.0 : present / attendance.length;
-    final gpsEligible = visits.where((v) => v.checkInTime != null || v.checkOutTime != null).toList();
-    final gpsComplete = gpsEligible.where((v) => v.checkInLatitude != null && v.checkOutLatitude != null).length;
+    final attendanceRate = attendance.isEmpty
+        ? 0.0
+        : present / attendance.length;
+    final gpsEligible = visits
+        .where((v) => v.checkInTime != null || v.checkOutTime != null)
+        .toList();
+    final gpsComplete = gpsEligible
+        .where((v) => v.checkInLatitude != null && v.checkOutLatitude != null)
+        .length;
     final gps = gpsEligible.isEmpty ? 0.0 : gpsComplete / gpsEligible.length;
     final productivity = _personalScore(
       data: data,
@@ -610,21 +829,94 @@ class _PerformanceGrid extends StatelessWidget {
     final monthStart = DateTime(now.year, now.month);
     final quarterStart = DateTime(now.year, ((now.month - 1) ~/ 3) * 3 + 1);
     final yearStart = DateTime(now.year);
-    return _MetricGrid(metrics: [
-      _Metric('Attendance', '${(attendanceRate * 100).round()}%', Icons.event_available_outlined, () => _push(context, const AttendanceScreen())),
-      _Metric('Visit Completion', '${(completion * 100).round()}%', Icons.task_alt, () => _push(context, const CustomerVisitScreen())),
-      _Metric('Productivity', '$productivity% ${_trend(trend)}', Icons.speed, () => _push(context, const ReportsScreen())),
-      _Metric('Working Hours', _duration(working), Icons.schedule, () => _push(context, const AttendanceScreen())),
-      _Metric('Punctuality', 'Not available', Icons.alarm_on_outlined, () => _unsupported(context, 'Shift schedule data is not available.')),
-      _Metric('GPS Compliance', '${(gps * 100).round()}%', Icons.gps_fixed, () => _push(context, const MapScreen())),
-      _Metric('Travel Efficiency', 'Not available', Icons.route, () => _unsupported(context, 'Actual route distance is not stored for comparison.')),
-      _Metric('Monthly Performance', '${_personalScore(data: data, start: monthStart, endExclusive: now.add(const Duration(days: 1)))}%', Icons.calendar_month_outlined, () => _push(context, const ReportsScreen())),
-      _Metric('Quarterly Performance', '${_personalScore(data: data, start: quarterStart, endExclusive: now.add(const Duration(days: 1)))}%', Icons.date_range_outlined, () => _push(context, const ReportsScreen())),
-      _Metric('Yearly Performance', '${_personalScore(data: data, start: yearStart, endExclusive: now.add(const Duration(days: 1)))}%', Icons.insights_outlined, () => _push(context, const ReportsScreen())),
-      _Metric('Company Rank', _rankLabel(organization.companyRank, organization.employees.length), Icons.emoji_events_outlined, () => _push(context, const OrganizationAdminScreen())),
-      _Metric('Branch Rank', _rankLabel(organization.branchRank, organization.branchPeerCount), Icons.account_tree_outlined, () => _push(context, const OrganizationAdminScreen())),
-      _Metric('Department Rank', _rankLabel(organization.departmentRank, organization.departmentPeerCount), Icons.domain_outlined, () => _push(context, const OrganizationAdminScreen())),
-    ]);
+    return _MetricGrid(
+      metrics: [
+        _Metric(
+          'Attendance',
+          '${(attendanceRate * 100).round()}%',
+          Icons.event_available_outlined,
+          () => _push(context, const AttendanceScreen()),
+        ),
+        _Metric(
+          'Visit Completion',
+          '${(completion * 100).round()}%',
+          Icons.task_alt,
+          () => _push(context, const CustomerVisitScreen()),
+        ),
+        _Metric(
+          'Productivity',
+          '$productivity% ${_trend(trend)}',
+          Icons.speed,
+          () => _push(context, const ReportsScreen()),
+        ),
+        _Metric(
+          'Working Hours',
+          _duration(working),
+          Icons.schedule,
+          () => _push(context, const AttendanceScreen()),
+        ),
+        _Metric(
+          'Punctuality',
+          'Not available',
+          Icons.alarm_on_outlined,
+          () => _unsupported(context, 'Shift schedule data is not available.'),
+        ),
+        _Metric(
+          'GPS Compliance',
+          '${(gps * 100).round()}%',
+          Icons.gps_fixed,
+          () => _push(context, const MapScreen()),
+        ),
+        _Metric(
+          'Travel Efficiency',
+          'Not available',
+          Icons.route,
+          () => _unsupported(
+            context,
+            'Actual route distance is not stored for comparison.',
+          ),
+        ),
+        _Metric(
+          'Monthly Performance',
+          '${_personalScore(data: data, start: monthStart, endExclusive: now.add(const Duration(days: 1)))}%',
+          Icons.calendar_month_outlined,
+          () => _push(context, const ReportsScreen()),
+        ),
+        _Metric(
+          'Quarterly Performance',
+          '${_personalScore(data: data, start: quarterStart, endExclusive: now.add(const Duration(days: 1)))}%',
+          Icons.date_range_outlined,
+          () => _push(context, const ReportsScreen()),
+        ),
+        _Metric(
+          'Yearly Performance',
+          '${_personalScore(data: data, start: yearStart, endExclusive: now.add(const Duration(days: 1)))}%',
+          Icons.insights_outlined,
+          () => _push(context, const ReportsScreen()),
+        ),
+        _Metric(
+          'Company Rank',
+          _rankLabel(organization.companyRank, organization.employees.length),
+          Icons.emoji_events_outlined,
+          () => _push(context, const OrganizationAdminScreen()),
+        ),
+        _Metric(
+          'Branch Rank',
+          _rankLabel(organization.branchRank, organization.branchPeerCount),
+          Icons.account_tree_outlined,
+          () => _push(context, const OrganizationAdminScreen()),
+        ),
+        _Metric(
+          'Department Rank',
+          _rankLabel(
+            organization.departmentRank,
+            organization.departmentPeerCount,
+          ),
+          Icons.domain_outlined,
+          () => _push(context, const OrganizationAdminScreen()),
+        ),
+      ],
+    );
   }
 }
 
@@ -632,67 +924,166 @@ class _MyOperations extends StatelessWidget {
   final ProfileOperationsSnapshot data;
   final List<CustomerVisitModel> todayVisits;
   final List<CustomerVisitModel> upcoming;
-  const _MyOperations({required this.data, required this.todayVisits, required this.upcoming});
+  const _MyOperations({
+    required this.data,
+    required this.todayVisits,
+    required this.upcoming,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final active = todayVisits.where((v) => v.status == 'checked_in').firstOrNull;
+    final active = todayVisits
+        .where((v) => v.status == 'checked_in')
+        .firstOrNull;
     final recent = _activities(data).take(4).toList();
     final today = DateTime.now();
     final todayStart = DateTime(today.year, today.month, today.day);
-    final carryForward = data.visits.where((visit) =>
-        _visitDate(visit).isBefore(todayStart) && visit.status != 'completed').length;
+    final carryForward = data.visits
+        .where(
+          (visit) =>
+              _visitDate(visit).isBefore(todayStart) &&
+              visit.status != 'completed',
+        )
+        .length;
     final currentActivity = active == null
         ? (recent.firstOrNull?.title ?? 'No current activity')
         : 'Visit • ${active.customerName}';
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      _MetricGrid(metrics: [
-        _Metric("Today's Visits", '${todayVisits.length}', Icons.route_outlined, () => _push(context, const CustomerVisitScreen())),
-        _Metric('Upcoming', '${upcoming.length}', Icons.upcoming_outlined, () => _push(context, const CustomerVisitScreen())),
-        _Metric('Carry Forward', '$carryForward', Icons.redo, () => _push(context, const CustomerVisitScreen())),
-        _Metric("Today's Attendance", data.todayAttendance?.status ?? 'Not started', Icons.fact_check_outlined, () => _push(context, const AttendanceScreen())),
-        _Metric('Current Duty', active == null ? (data.todayAttendance?.status ?? 'Off Duty') : 'Customer Visit', Icons.work_history_outlined, () => active == null ? _push(context, const AttendanceScreen()) : _push(context, CustomerVisitDetailScreen(visit: active))),
-        _Metric('Current Activity', currentActivity, Icons.timeline_outlined, () => active == null ? _push(context, const AttendanceScreen()) : _push(context, CustomerVisitDetailScreen(visit: active))),
-        _Metric('Current Location', data.liveLocation == null ? 'Unavailable' : '${data.liveLocation!.latitude.toStringAsFixed(4)}, ${data.liveLocation!.longitude.toStringAsFixed(4)}', Icons.my_location, () => _push(context, const MapScreen())),
-      ]),
-      const SizedBox(height: 10),
-      Row(children: [
-        Expanded(child: OutlinedButton.icon(onPressed: () => active == null ? _push(context, const CustomerVisitScreen()) : _push(context, CustomerVisitDetailScreen(visit: active)), icon: const Icon(Icons.open_in_new, size: 17), label: const Text('Open Visit'))),
-        const SizedBox(width: 8),
-        Expanded(child: OutlinedButton.icon(onPressed: () => _push(context, const AttendanceScreen()), icon: const Icon(Icons.badge_outlined, size: 17), label: const Text('Attendance'))),
-        const SizedBox(width: 8),
-        Expanded(child: OutlinedButton.icon(onPressed: () => _push(context, const MapScreen()), icon: const Icon(Icons.my_location, size: 17), label: const Text('Locate Me'))),
-      ]),
-      const SizedBox(height: 10),
-      _PreviewList(items: recent.map((a) => (a.title, _dateTime(a.time), a.icon)).toList(), empty: 'No recent operational activity.'),
-      const Divider(height: 18),
-      _CompactPreviewHeader(
-        title: 'Recent Notifications',
-        onViewAll: () => _push(context, const NotificationCenterScreen()),
-      ),
-      _PreviewList(
-        items: data.notifications
-            .take(3)
-            .map((item) => (item.title, _dateTime(item.createdAt), Icons.notifications_outlined))
-            .toList(),
-        empty: 'No recent notifications.',
-      ),
-      _CompactPreviewHeader(
-        title: 'Recent Complaints',
-        onViewAll: () => _push(context, const ComplaintRegisterScreen()),
-      ),
-      _PreviewList(
-        items: data.complaints
-            .take(3)
-            .map((item) => (item.customerName, item.status, Icons.support_agent_outlined))
-            .toList(),
-        empty: 'No recent complaints.',
-      ),
-      const _UnsupportedDomain(
-        title: 'Recent Tasks unavailable',
-        message: 'No approved task model or service exists. Profile does not create a substitute task collection.',
-      ),
-    ]);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _MetricGrid(
+          metrics: [
+            _Metric(
+              "Today's Visits",
+              '${todayVisits.length}',
+              Icons.route_outlined,
+              () => _push(context, const CustomerVisitScreen()),
+            ),
+            _Metric(
+              'Upcoming',
+              '${upcoming.length}',
+              Icons.upcoming_outlined,
+              () => _push(context, const CustomerVisitScreen()),
+            ),
+            _Metric(
+              'Carry Forward',
+              '$carryForward',
+              Icons.redo,
+              () => _push(context, const CustomerVisitScreen()),
+            ),
+            _Metric(
+              "Today's Attendance",
+              data.todayAttendance?.status ?? 'Not started',
+              Icons.fact_check_outlined,
+              () => _push(context, const AttendanceScreen()),
+            ),
+            _Metric(
+              'Current Duty',
+              active == null
+                  ? (data.todayAttendance?.status ?? 'Off Duty')
+                  : 'Customer Visit',
+              Icons.work_history_outlined,
+              () => active == null
+                  ? _push(context, const AttendanceScreen())
+                  : _push(context, CustomerVisitDetailScreen(visit: active)),
+            ),
+            _Metric(
+              'Current Activity',
+              currentActivity,
+              Icons.timeline_outlined,
+              () => active == null
+                  ? _push(context, const AttendanceScreen())
+                  : _push(context, CustomerVisitDetailScreen(visit: active)),
+            ),
+            _Metric(
+              'Current Location',
+              data.liveLocation == null
+                  ? 'Unavailable'
+                  : '${data.liveLocation!.latitude.toStringAsFixed(4)}, ${data.liveLocation!.longitude.toStringAsFixed(4)}',
+              Icons.my_location,
+              () => _push(context, const MapScreen()),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => active == null
+                    ? _push(context, const CustomerVisitScreen())
+                    : _push(context, CustomerVisitDetailScreen(visit: active)),
+                icon: const Icon(Icons.open_in_new, size: 17),
+                label: const Text('Open Visit'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _push(context, const AttendanceScreen()),
+                icon: const Icon(Icons.badge_outlined, size: 17),
+                label: const Text('Attendance'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _push(context, const MapScreen()),
+                icon: const Icon(Icons.my_location, size: 17),
+                label: const Text('Locate Me'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _PreviewList(
+          items: recent
+              .map((a) => (a.title, _dateTime(a.time), a.icon))
+              .toList(),
+          empty: 'No recent operational activity.',
+        ),
+        const Divider(height: 18),
+        _CompactPreviewHeader(
+          title: 'Recent Notifications',
+          onViewAll: () => _push(context, const NotificationCenterScreen()),
+        ),
+        _PreviewList(
+          items: data.notifications
+              .take(3)
+              .map(
+                (item) => (
+                  item.title,
+                  _dateTime(item.createdAt),
+                  Icons.notifications_outlined,
+                ),
+              )
+              .toList(),
+          empty: 'No recent notifications.',
+        ),
+        _CompactPreviewHeader(
+          title: 'Recent Complaints',
+          onViewAll: () => _push(context, const ComplaintRegisterScreen()),
+        ),
+        _PreviewList(
+          items: data.complaints
+              .take(3)
+              .map(
+                (item) => (
+                  item.customerName,
+                  item.status,
+                  Icons.support_agent_outlined,
+                ),
+              )
+              .toList(),
+          empty: 'No recent complaints.',
+        ),
+        const _UnsupportedDomain(
+          title: 'Recent Tasks unavailable',
+          message:
+              'No approved task model or service exists. Profile does not create a substitute task collection.',
+        ),
+      ],
+    );
   }
 }
 
@@ -710,20 +1101,83 @@ class _OrganizationOverview extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _MetricGrid(metrics: [
-          _Metric('Total Employees', '${projection.employees.length}', Icons.groups_outlined, onViewAll),
-          _Metric('Present', '${projection.present}', Icons.how_to_reg_outlined, onViewAll),
-          _Metric('Absent', '${projection.absent}', Icons.person_off_outlined, onViewAll),
-          _Metric('Leave', '${projection.leave}', Icons.event_busy_outlined, onViewAll),
-          _Metric('On Visit', '${projection.onVisit}', Icons.route_outlined, onViewAll),
-          _Metric('Travelling', '${projection.travelling}', Icons.alt_route, onViewAll),
-          _Metric('Drivers', '${projection.drivers}', Icons.local_shipping_outlined, onViewAll),
-          _Metric('Office Staff', '${projection.officeStaff}', Icons.desk_outlined, onViewAll),
-          _Metric('Managers', '${projection.managers}', Icons.supervisor_account_outlined, onViewAll),
-          _Metric('Branches', '${projection.branchScores.length}', Icons.account_tree_outlined, onViewAll),
-          _Metric('Departments', '${projection.departmentScores.length}', Icons.domain_outlined, onViewAll),
-          _Metric('Pending Approvals', 'Not available', Icons.approval_outlined, () => _unsupported(context, 'No approval model or service exists.')),
-        ]),
+        _MetricGrid(
+          metrics: [
+            _Metric(
+              'Total Employees',
+              '${projection.employees.length}',
+              Icons.groups_outlined,
+              onViewAll,
+            ),
+            _Metric(
+              'Present',
+              '${projection.present}',
+              Icons.how_to_reg_outlined,
+              onViewAll,
+            ),
+            _Metric(
+              'Absent',
+              '${projection.absent}',
+              Icons.person_off_outlined,
+              onViewAll,
+            ),
+            _Metric(
+              'Leave',
+              '${projection.leave}',
+              Icons.event_busy_outlined,
+              onViewAll,
+            ),
+            _Metric(
+              'On Visit',
+              '${projection.onVisit}',
+              Icons.route_outlined,
+              onViewAll,
+            ),
+            _Metric(
+              'Travelling',
+              '${projection.travelling}',
+              Icons.alt_route,
+              onViewAll,
+            ),
+            _Metric(
+              'Drivers',
+              '${projection.drivers}',
+              Icons.local_shipping_outlined,
+              onViewAll,
+            ),
+            _Metric(
+              'Office Staff',
+              '${projection.officeStaff}',
+              Icons.desk_outlined,
+              onViewAll,
+            ),
+            _Metric(
+              'Managers',
+              '${projection.managers}',
+              Icons.supervisor_account_outlined,
+              onViewAll,
+            ),
+            _Metric(
+              'Branches',
+              '${projection.branchScores.length}',
+              Icons.account_tree_outlined,
+              onViewAll,
+            ),
+            _Metric(
+              'Departments',
+              '${projection.departmentScores.length}',
+              Icons.domain_outlined,
+              onViewAll,
+            ),
+            _Metric(
+              'Pending Approvals',
+              'Not available',
+              Icons.approval_outlined,
+              () =>
+                  _unsupported(context, 'No approval model or service exists.'),
+            ),
+          ],
+        ),
         Align(
           alignment: Alignment.centerRight,
           child: TextButton.icon(
@@ -795,7 +1249,14 @@ class _EmployeeDirectoryPreview extends StatelessWidget {
                       DataCell(Text(_configured(row.user.phone))),
                       DataCell(Text(_configured(row.user.email))),
                       DataCell(Text('${row.score}%')),
-                      DataCell(Icon(row.hasLocation ? Icons.location_on : Icons.location_off, size: 17)),
+                      DataCell(
+                        Icon(
+                          row.hasLocation
+                              ? Icons.location_on
+                              : Icons.location_off,
+                          size: 17,
+                        ),
+                      ),
                     ],
                   ),
                 )
@@ -806,7 +1267,9 @@ class _EmployeeDirectoryPreview extends StatelessWidget {
           alignment: Alignment.centerRight,
           child: TextButton(
             onPressed: onViewAll,
-            child: Text('Search, filter, sort and paginate all ${projection.employees.length} employees'),
+            child: Text(
+              'Search, filter, sort and paginate all ${projection.employees.length} employees',
+            ),
           ),
         ),
       ],
@@ -828,33 +1291,71 @@ class _OrganizationAnalytics extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _MetricGrid(metrics: [
-          _Metric('Attendance', '${projection.attendanceRate}%', Icons.event_available_outlined, onViewAll),
-          _Metric('Visit Completion', '${projection.visitCompletion}%', Icons.task_alt, onViewAll),
-          _Metric('Productivity', '${projection.averageProductivity}%', Icons.speed, onViewAll),
-          _Metric('Travel', '${projection.travelDistance.toStringAsFixed(1)} km', Icons.alt_route, onViewAll),
-          _Metric('Working Hours', _duration(projection.workingTime), Icons.schedule, onViewAll),
-        ]),
+        _MetricGrid(
+          metrics: [
+            _Metric(
+              'Attendance',
+              '${projection.attendanceRate}%',
+              Icons.event_available_outlined,
+              onViewAll,
+            ),
+            _Metric(
+              'Visit Completion',
+              '${projection.visitCompletion}%',
+              Icons.task_alt,
+              onViewAll,
+            ),
+            _Metric(
+              'Productivity',
+              '${projection.averageProductivity}%',
+              Icons.speed,
+              onViewAll,
+            ),
+            _Metric(
+              'Travel',
+              '${projection.travelDistance.toStringAsFixed(1)} km',
+              Icons.alt_route,
+              onViewAll,
+            ),
+            _Metric(
+              'Working Hours',
+              _duration(projection.workingTime),
+              Icons.schedule,
+              onViewAll,
+            ),
+          ],
+        ),
         const SizedBox(height: 12),
-        _ComparisonBars(title: 'Branch Comparison', values: projection.branchScores),
+        _ComparisonBars(
+          title: 'Branch Comparison',
+          values: projection.branchScores,
+        ),
         const SizedBox(height: 12),
-        _ComparisonBars(title: 'Department Comparison', values: projection.departmentScores),
+        _ComparisonBars(
+          title: 'Department Comparison',
+          values: projection.departmentScores,
+        ),
         const SizedBox(height: 12),
         Text('Top Engineers', style: AppTextStyles.bodyLarge),
-        ...projection.employees.take(5).map(
-          (employee) => ListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.emoji_events_outlined, size: 18),
-            title: Text(_configured(employee.user.name)),
-            subtitle: Text('${employee.completedVisits} completed visits'),
-            trailing: Text('${employee.score}%'),
-            onTap: onViewAll,
-          ),
-        ),
+        ...projection.employees
+            .take(5)
+            .map(
+              (employee) => ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.emoji_events_outlined, size: 18),
+                title: Text(_configured(employee.user.name)),
+                subtitle: Text('${employee.completedVisits} completed visits'),
+                trailing: Text('${employee.score}%'),
+                onTap: onViewAll,
+              ),
+            ),
         Align(
           alignment: Alignment.centerRight,
-          child: TextButton(onPressed: onViewAll, child: const Text('View Analytics')),
+          child: TextButton(
+            onPressed: onViewAll,
+            child: const Text('View Analytics'),
+          ),
         ),
       ],
     );
@@ -888,7 +1389,12 @@ class _ComparisonBars extends StatelessWidget {
               children: [
                 SizedBox(
                   width: 105,
-                  child: Text(entry.key, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppTextStyles.caption),
+                  child: Text(
+                    entry.key,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.caption,
+                  ),
                 ),
                 Expanded(
                   child: ClipRRect(
@@ -896,7 +1402,9 @@ class _ComparisonBars extends StatelessWidget {
                     child: LinearProgressIndicator(
                       value: entry.value / 100,
                       minHeight: 7,
-                      backgroundColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+                      backgroundColor: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
                     ),
                   ),
                 ),
@@ -919,12 +1427,16 @@ class _CompactPreviewHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(
-        children: [
-          Expanded(child: Text(title, style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: 14))),
-          TextButton(onPressed: onViewAll, child: const Text('View All')),
-        ],
-      );
-
+    children: [
+      Expanded(
+        child: Text(
+          title,
+          style: Theme.of(context).textTheme.bodyLarge?.copyWith(fontSize: 14),
+        ),
+      ),
+      TextButton(onPressed: onViewAll, child: const Text('View All')),
+    ],
+  );
 }
 
 class _OrganizationProjection {
@@ -989,29 +1501,48 @@ class _OrganizationProjection {
       visitsByUser.putIfAbsent(visit.userId, () => []).add(visit);
     }
     final locationIds = data.liveLocations.map((item) => item.userId).toSet();
-    final employees = data.employees
-        .map(
-          (user) => _OrganizationEmployee(
-            user: user,
-            attendance: attendanceByUser[user.uid],
-            visits: visitsByUser[user.uid] ?? const <CustomerVisitModel>[],
-            hasLocation: locationIds.contains(user.uid),
-          ),
-        )
-        .toList()
-      ..sort((a, b) => b.score.compareTo(a.score));
-    final completed = employees.fold<int>(0, (sum, item) => sum + item.completedVisits);
-    final totalVisits = employees.fold<int>(0, (sum, item) => sum + item.visits.length);
-    final present = employees.where((item) => item.attendance?.checkInTime != null).length;
+    final employees =
+        data.employees
+            .map(
+              (user) => _OrganizationEmployee(
+                user: user,
+                attendance: attendanceByUser[user.uid],
+                visits: visitsByUser[user.uid] ?? const <CustomerVisitModel>[],
+                hasLocation: locationIds.contains(user.uid),
+              ),
+            )
+            .toList()
+          ..sort((a, b) => b.score.compareTo(a.score));
+    final completed = employees.fold<int>(
+      0,
+      (sum, item) => sum + item.completedVisits,
+    );
+    final totalVisits = employees.fold<int>(
+      0,
+      (sum, item) => sum + item.visits.length,
+    );
+    final present = employees
+        .where((item) => item.attendance?.checkInTime != null)
+        .length;
     final groupBranches = _groupScores(employees, (item) => item.user.branch);
-    final groupDepartments = _groupScores(employees, (item) => item.user.department);
-    final current = employees.where((item) => item.user.uid == currentUserId).firstOrNull;
+    final groupDepartments = _groupScores(
+      employees,
+      (item) => item.user.department,
+    );
+    final current = employees
+        .where((item) => item.user.uid == currentUserId)
+        .firstOrNull;
     final branchPeers = current == null || current.user.branch.trim().isEmpty
         ? const <_OrganizationEmployee>[]
-        : employees.where((item) => item.user.branch == current.user.branch).toList();
-    final departmentPeers = current == null || current.user.department.trim().isEmpty
+        : employees
+              .where((item) => item.user.branch == current.user.branch)
+              .toList();
+    final departmentPeers =
+        current == null || current.user.department.trim().isEmpty
         ? const <_OrganizationEmployee>[]
-        : employees.where((item) => item.user.department == current.user.department).toList();
+        : employees
+              .where((item) => item.user.department == current.user.department)
+              .toList();
     return _OrganizationProjection(
       employees: employees,
       present: present,
@@ -1019,28 +1550,44 @@ class _OrganizationProjection {
       leave: employees.where((item) => item.status == 'Leave').length,
       onVisit: employees.where((item) => item.activeVisit).length,
       travelling: employees.where((item) => item.status == 'Travelling').length,
-      drivers: employees.where((item) => item.user.role.toLowerCase().contains('driver')).length,
+      drivers: employees
+          .where((item) => item.user.role.toLowerCase().contains('driver'))
+          .length,
       officeStaff: employees.where((item) {
         final role = item.user.role.toLowerCase();
         return !role.contains('driver') && !role.contains('manager');
       }).length,
-      managers: employees.where((item) => item.user.role.toLowerCase().contains('manager')).length,
-      attendanceRate: employees.isEmpty ? 0 : (present / employees.length * 100).round(),
-      visitCompletion: totalVisits == 0 ? 0 : (completed / totalVisits * 100).round(),
+      managers: employees
+          .where((item) => item.user.role.toLowerCase().contains('manager'))
+          .length,
+      attendanceRate: employees.isEmpty
+          ? 0
+          : (present / employees.length * 100).round(),
+      visitCompletion: totalVisits == 0
+          ? 0
+          : (completed / totalVisits * 100).round(),
       averageProductivity: employees.isEmpty
           ? 0
-          : (employees.fold<int>(0, (sum, item) => sum + item.score) / employees.length).round(),
-      travelDistance: employees.fold<double>(0, (sum, item) => sum + item.travelDistance),
+          : (employees.fold<int>(0, (sum, item) => sum + item.score) /
+                    employees.length)
+                .round(),
+      travelDistance: employees.fold<double>(
+        0,
+        (sum, item) => sum + item.travelDistance,
+      ),
       workingTime: employees.fold<Duration>(
         Duration.zero,
-        (sum, item) => sum + (item.attendance?.netWorkingDuration(now) ?? Duration.zero),
+        (sum, item) =>
+            sum + (item.attendance?.netWorkingDuration(now) ?? Duration.zero),
       ),
       branchScores: groupBranches,
       departmentScores: groupDepartments,
       topBranch: groupBranches.isEmpty ? null : groupBranches.keys.first,
       companyRank: current == null ? null : employees.indexOf(current) + 1,
       branchRank: current == null ? null : _peerRank(branchPeers, current),
-      departmentRank: current == null ? null : _peerRank(departmentPeers, current),
+      departmentRank: current == null
+          ? null
+          : _peerRank(departmentPeers, current),
       branchPeerCount: branchPeers.length,
       departmentPeerCount: departmentPeers.length,
     );
@@ -1062,8 +1609,10 @@ class _OrganizationEmployee {
   }) : score = _employeeScore(attendance, visits);
 
   bool get activeVisit => visits.any((visit) => visit.status == 'checked_in');
-  int get completedVisits => visits.where((visit) => visit.status == 'completed').length;
-  double get travelDistance => visits.fold<double>(0, (sum, visit) => sum + (visit.roadDistanceKm ?? 0));
+  int get completedVisits =>
+      visits.where((visit) => visit.status == 'completed').length;
+  double get travelDistance =>
+      visits.fold<double>(0, (sum, visit) => sum + (visit.roadDistanceKm ?? 0));
 
   String get status {
     if (activeVisit) return 'On Visit';
@@ -1084,12 +1633,37 @@ class _UnsupportedDomain extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(12),
-    decoration: BoxDecoration(color: AppColors.warning.withAlpha(12), border: Border.all(color: AppColors.warning.withAlpha(65)), borderRadius: BorderRadius.circular(12)),
-    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      const Icon(Icons.info_outline, color: AppColors.warning, size: 20),
-      const SizedBox(width: 10),
-      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: AppTextStyles.bodyLarge.copyWith(fontSize: 14)), const SizedBox(height: 4), Text(message, style: AppTextStyles.caption.copyWith(height: 1.4, letterSpacing: 0))])),
-    ]),
+    decoration: BoxDecoration(
+      color: AppColors.warning.withAlpha(12),
+      border: Border.all(color: AppColors.warning.withAlpha(65)),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.info_outline, color: AppColors.warning, size: 20),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: AppTextStyles.bodyLarge.copyWith(fontSize: 14),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                message,
+                style: AppTextStyles.caption.copyWith(
+                  height: 1.4,
+                  letterSpacing: 0,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
   );
 }
 
@@ -1101,21 +1675,130 @@ class _PersonalSettings extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final prefs = data.notificationPreferences;
-    return Column(children: [
-      _SettingTile(icon: Icons.phone_outlined, title: 'Phone', subtitle: data.user.phone.isEmpty ? 'Add phone number' : data.user.phone, onTap: () => _editPhone(context, data.user.phone, onReload)),
-      _SettingTile(icon: Icons.email_outlined, title: 'Email', subtitle: data.user.email, onTap: () => _unsupported(context, 'Email changes require Firebase Authentication reauthentication and are not safely supported by the current auth flow.')),
-      _SettingTile(icon: Icons.emergency_outlined, title: 'Emergency Contact', subtitle: _configured(data.user.emergencyContact), onTap: () => _editProfileDetails(context, data.user, onReload)),
-      _SettingTile(icon: Icons.language, title: 'Language', subtitle: data.user.language == 'system' ? 'System default' : data.user.language.toUpperCase(), onTap: () => _selectStoredPreference(context: context, title: 'Language preference', current: data.user.language, values: const ['system', 'en', 'hi'], field: 'language', onReload: onReload, note: 'The preference is stored. Full runtime localization remains TODO because translation resources do not exist.')),
-      _SettingTile(icon: Icons.palette_outlined, title: 'Theme', subtitle: data.user.themeMode, onTap: () => _selectTheme(context, data.user.themeMode, onReload)),
-      SwitchListTile.adaptive(dense: true, contentPadding: EdgeInsets.zero, title: const Text('In-app notifications'), subtitle: const Text('Firestore-backed notification preference'), value: prefs.localInAppNotifications, onChanged: (value) => _updatePrefs(context, prefs.copyWith(localInAppNotifications: value), onReload)),
-      SwitchListTile.adaptive(dense: true, contentPadding: EdgeInsets.zero, title: const Text('Attendance reminders'), value: prefs.attendanceReminders, onChanged: (value) => _updatePrefs(context, prefs.copyWith(attendanceReminders: value), onReload)),
-      SwitchListTile.adaptive(dense: true, contentPadding: EdgeInsets.zero, title: const Text('Visit alerts'), value: prefs.visitAlerts, onChanged: (value) => _updatePrefs(context, prefs.copyWith(visitAlerts: value), onReload)),
-      _SettingTile(icon: Icons.gps_fixed, title: 'GPS Preferences', subtitle: data.locationPermission.message, onTap: ProfileController.openLocationSettings),
-      _SettingTile(icon: Icons.high_quality_outlined, title: 'Location Accuracy', subtitle: data.user.locationAccuracy, onTap: () => _selectStoredPreference(context: context, title: 'Location accuracy preference', current: data.user.locationAccuracy, values: const ['low', 'balanced', 'high', 'best'], field: 'locationAccuracy', onReload: onReload, note: 'The preference is stored. Existing tracking services retain their approved accuracy policy until centrally integrated.')),
-      _SettingTile(icon: Icons.privacy_tip_outlined, title: 'Privacy & Permissions', subtitle: 'Open application settings', onTap: ProfileController.openAppSettings),
-      _SettingTile(icon: Icons.lock_reset, title: 'Change Password', subtitle: 'Send a secure reset email', onTap: () => _resetPassword(context)),
-      _SettingTile(icon: Icons.logout, title: 'Logout', subtitle: 'End this session', destructive: true, onTap: () => _logout(context)),
-    ]);
+    return Column(
+      children: [
+        _SettingTile(
+          icon: Icons.phone_outlined,
+          title: 'Phone',
+          subtitle: data.user.phone.isEmpty
+              ? 'Add phone number'
+              : data.user.phone,
+          onTap: () => _editPhone(context, data.user.phone, onReload),
+        ),
+        _SettingTile(
+          icon: Icons.email_outlined,
+          title: 'Email',
+          subtitle: data.user.email,
+          onTap: () => _unsupported(
+            context,
+            'Email changes require Firebase Authentication reauthentication and are not safely supported by the current auth flow.',
+          ),
+        ),
+        _SettingTile(
+          icon: Icons.emergency_outlined,
+          title: 'Emergency Contact',
+          subtitle: _configured(data.user.emergencyContact),
+          onTap: () => _editProfileDetails(context, data.user, onReload),
+        ),
+        _SettingTile(
+          icon: Icons.language,
+          title: 'Language',
+          subtitle: data.user.language == 'system'
+              ? 'System default'
+              : data.user.language.toUpperCase(),
+          onTap: () => _selectStoredPreference(
+            context: context,
+            title: 'Language preference',
+            current: data.user.language,
+            values: const ['system', 'en', 'hi'],
+            field: 'language',
+            onReload: onReload,
+            note:
+                'The preference is stored. Full runtime localization remains TODO because translation resources do not exist.',
+          ),
+        ),
+        _SettingTile(
+          icon: Icons.palette_outlined,
+          title: 'Theme',
+          subtitle: data.user.themeMode,
+          onTap: () => _selectTheme(context, data.user.themeMode, onReload),
+        ),
+        SwitchListTile.adaptive(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('In-app notifications'),
+          subtitle: const Text('Firestore-backed notification preference'),
+          value: prefs.localInAppNotifications,
+          onChanged: (value) => _updatePrefs(
+            context,
+            prefs.copyWith(localInAppNotifications: value),
+            onReload,
+          ),
+        ),
+        SwitchListTile.adaptive(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Attendance reminders'),
+          value: prefs.attendanceReminders,
+          onChanged: (value) => _updatePrefs(
+            context,
+            prefs.copyWith(attendanceReminders: value),
+            onReload,
+          ),
+        ),
+        SwitchListTile.adaptive(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Visit alerts'),
+          value: prefs.visitAlerts,
+          onChanged: (value) => _updatePrefs(
+            context,
+            prefs.copyWith(visitAlerts: value),
+            onReload,
+          ),
+        ),
+        _SettingTile(
+          icon: Icons.gps_fixed,
+          title: 'GPS Preferences',
+          subtitle: data.locationPermission.message,
+          onTap: ProfileController.openLocationSettings,
+        ),
+        _SettingTile(
+          icon: Icons.high_quality_outlined,
+          title: 'Location Accuracy',
+          subtitle: data.user.locationAccuracy,
+          onTap: () => _selectStoredPreference(
+            context: context,
+            title: 'Location accuracy preference',
+            current: data.user.locationAccuracy,
+            values: const ['low', 'balanced', 'high', 'best'],
+            field: 'locationAccuracy',
+            onReload: onReload,
+            note:
+                'The preference is stored. Existing tracking services retain their approved accuracy policy until centrally integrated.',
+          ),
+        ),
+        _SettingTile(
+          icon: Icons.privacy_tip_outlined,
+          title: 'Privacy & Permissions',
+          subtitle: 'Open application settings',
+          onTap: ProfileController.openAppSettings,
+        ),
+        _SettingTile(
+          icon: Icons.lock_reset,
+          title: 'Change Password',
+          subtitle: 'Send a secure reset email',
+          onTap: () => _resetPassword(context),
+        ),
+        _SettingTile(
+          icon: Icons.logout,
+          title: 'Logout',
+          subtitle: 'End this session',
+          destructive: true,
+          onTap: () => _logout(context),
+        ),
+      ],
+    );
   }
 }
 
@@ -1125,13 +1808,28 @@ class _SettingTile extends StatelessWidget {
   final String subtitle;
   final FutureOr<void> Function() onTap;
   final bool destructive;
-  const _SettingTile({required this.icon, required this.title, required this.subtitle, required this.onTap, this.destructive = false});
+  const _SettingTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.destructive = false,
+  });
   @override
   Widget build(BuildContext context) => ListTile(
     dense: true,
     contentPadding: EdgeInsets.zero,
-    leading: Icon(icon, size: 20, color: destructive ? AppColors.error : Theme.of(context).colorScheme.onSurfaceVariant),
-    title: Text(title, style: TextStyle(color: destructive ? AppColors.error : null)),
+    leading: Icon(
+      icon,
+      size: 20,
+      color: destructive
+          ? AppColors.error
+          : Theme.of(context).colorScheme.onSurfaceVariant,
+    ),
+    title: Text(
+      title,
+      style: TextStyle(color: destructive ? AppColors.error : null),
+    ),
     subtitle: Text(subtitle, maxLines: 2, overflow: TextOverflow.ellipsis),
     trailing: const Icon(Icons.chevron_right, size: 18),
     onTap: () async => onTap(),
@@ -1146,22 +1844,76 @@ class _AccountHealth extends StatelessWidget {
     final completion = _profileCompletion(data.user);
     final missingFields = _missingProfileFields(data.user);
     final missing = missingFields.length;
-    final missingContacts = [data.user.phone, data.user.emergencyContact]
-        .where((value) => value.trim().isEmpty)
-        .length;
-    final notificationEnabled = data.notificationPreferences.localInAppNotifications;
-    return _MetricGrid(metrics: [
-      _Metric('Profile Completion', '$completion%', Icons.person_search_outlined, () {}),
-      _Metric('Missing Fields', '$missing', Icons.rule_outlined, () => _unsupported(context, missingFields.isEmpty ? 'No required profile fields are missing.' : 'Missing: ${missingFields.join(', ')}.')),
-      _Metric('Missing Contacts', '$missingContacts', Icons.contact_phone_outlined, () => _unsupported(context, missingContacts == 0 ? 'Phone and emergency contact are complete.' : 'Complete phone and emergency contact details.')),
-      _Metric('GPS Enabled', data.locationPermission.serviceEnabled ? 'Yes' : 'No', Icons.gps_fixed, ProfileController.openLocationSettings),
-      _Metric('Notifications', notificationEnabled ? 'Enabled' : 'Disabled', Icons.notifications_active_outlined, () => _push(context, const NotificationCenterScreen())),
-      _Metric('Location Permission', data.locationPermission.permissionStatus, Icons.location_searching, ProfileController.openAppSettings),
-      _Metric('Theme', data.user.themeMode, Icons.palette_outlined, () {}),
-      _Metric('Language', data.user.language, Icons.language, () {}),
-      _Metric('Last Successful Sync', _dateTime(data.loadedAt), Icons.cloud_done_outlined, () {}),
-      _Metric('Security', 'Firebase Auth active', Icons.verified_user_outlined, () => _resetPassword(context)),
-    ]);
+    final missingContacts = [
+      data.user.phone,
+      data.user.emergencyContact,
+    ].where((value) => value.trim().isEmpty).length;
+    final notificationEnabled =
+        data.notificationPreferences.localInAppNotifications;
+    return _MetricGrid(
+      metrics: [
+        _Metric(
+          'Profile Completion',
+          '$completion%',
+          Icons.person_search_outlined,
+          () {},
+        ),
+        _Metric(
+          'Missing Fields',
+          '$missing',
+          Icons.rule_outlined,
+          () => _unsupported(
+            context,
+            missingFields.isEmpty
+                ? 'No required profile fields are missing.'
+                : 'Missing: ${missingFields.join(', ')}.',
+          ),
+        ),
+        _Metric(
+          'Missing Contacts',
+          '$missingContacts',
+          Icons.contact_phone_outlined,
+          () => _unsupported(
+            context,
+            missingContacts == 0
+                ? 'Phone and emergency contact are complete.'
+                : 'Complete phone and emergency contact details.',
+          ),
+        ),
+        _Metric(
+          'GPS Enabled',
+          data.locationPermission.serviceEnabled ? 'Yes' : 'No',
+          Icons.gps_fixed,
+          ProfileController.openLocationSettings,
+        ),
+        _Metric(
+          'Notifications',
+          notificationEnabled ? 'Enabled' : 'Disabled',
+          Icons.notifications_active_outlined,
+          () => _push(context, const NotificationCenterScreen()),
+        ),
+        _Metric(
+          'Location Permission',
+          data.locationPermission.permissionStatus,
+          Icons.location_searching,
+          ProfileController.openAppSettings,
+        ),
+        _Metric('Theme', data.user.themeMode, Icons.palette_outlined, () {}),
+        _Metric('Language', data.user.language, Icons.language, () {}),
+        _Metric(
+          'Last Successful Sync',
+          _dateTime(data.loadedAt),
+          Icons.cloud_done_outlined,
+          () {},
+        ),
+        _Metric(
+          'Security',
+          'Firebase Auth active',
+          Icons.verified_user_outlined,
+          () => _resetPassword(context),
+        ),
+      ],
+    );
   }
 }
 
@@ -1182,29 +1934,111 @@ class _AdminActions extends StatelessWidget {
 
   const _AdminActions({required this.onOpenSettings});
   @override
-  Widget build(BuildContext context) => _MetricGrid(metrics: [
-    _Metric('Attendance', 'Open', Icons.fact_check_outlined, () => _push(context, const AttendanceScreen())),
-    _Metric('Visits', 'Open', Icons.route_outlined, () => _push(context, const CustomerVisitScreen())),
-    _Metric('Map', 'Open', Icons.map_outlined, () => _push(context, const MapScreen())),
-    _Metric('Complaints', 'Open', Icons.support_agent_outlined, () => _push(context, const ComplaintRegisterScreen())),
-    _Metric('Employees', 'Open', Icons.groups_outlined, () => _push(context, const OrganizationAdminScreen())),
-    _Metric('Organization', 'Phase 2', Icons.corporate_fare_outlined, () => _push(context, const OrganizationAdminScreen())),
-    _Metric('Reports', 'Open', Icons.summarize_outlined, () => _push(context, const ReportsScreen())),
-    _Metric('Analytics', 'Open', Icons.analytics_outlined, () => _push(context, const ReportsScreen())),
-    _Metric('Notifications', 'Open', Icons.notifications_outlined, () => _push(context, const NotificationCenterScreen())),
-    _Metric('Settings', 'Open', Icons.settings_outlined, onOpenSettings),
-  ]);
+  Widget build(BuildContext context) => _MetricGrid(
+    metrics: [
+      _Metric(
+        'Attendance',
+        'Open',
+        Icons.fact_check_outlined,
+        () => _push(context, const AttendanceScreen()),
+      ),
+      _Metric(
+        'Visits',
+        'Open',
+        Icons.route_outlined,
+        () => _push(context, const CustomerVisitScreen()),
+      ),
+      _Metric(
+        'Map',
+        'Open',
+        Icons.map_outlined,
+        () => _push(context, const MapScreen()),
+      ),
+      _Metric(
+        'Complaints',
+        'Open',
+        Icons.support_agent_outlined,
+        () => _push(context, const ComplaintRegisterScreen()),
+      ),
+      _Metric(
+        'Employees',
+        'Open',
+        Icons.groups_outlined,
+        () => _push(context, const OrganizationAdminScreen()),
+      ),
+      _Metric(
+        'Organization',
+        'Phase 2',
+        Icons.corporate_fare_outlined,
+        () => _push(context, const OrganizationAdminScreen()),
+      ),
+      _Metric(
+        'Reports',
+        'Open',
+        Icons.summarize_outlined,
+        () => _push(context, const ReportsScreen()),
+      ),
+      _Metric(
+        'Analytics',
+        'Open',
+        Icons.analytics_outlined,
+        () => _push(context, const ReportsScreen()),
+      ),
+      _Metric(
+        'Notifications',
+        'Open',
+        Icons.notifications_outlined,
+        () => _push(context, const NotificationCenterScreen()),
+      ),
+      _Metric('Settings', 'Open', Icons.settings_outlined, onOpenSettings),
+    ],
+  );
 }
 
 class _InfoGrid extends StatelessWidget {
   final List<(String, String)> items;
   const _InfoGrid({required this.items});
   @override
-  Widget build(BuildContext context) => LayoutBuilder(builder: (context, constraints) {
-    final columns = constraints.maxWidth >= 700 ? 4 : constraints.maxWidth >= 430 ? 3 : 2;
-    final width = (constraints.maxWidth - (columns - 1) * 8) / columns;
-    return Wrap(spacing: 8, runSpacing: 8, children: items.map((item) => SizedBox(width: width, child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(item.$1, style: AppTextStyles.caption.copyWith(fontSize: 10)), const SizedBox(height: 2), Text(item.$2, maxLines: 1, overflow: TextOverflow.ellipsis, style: AppTextStyles.bodyMedium.copyWith(fontSize: 12, fontWeight: FontWeight.w600))]))).toList());
-  });
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final columns = constraints.maxWidth >= 700
+          ? 4
+          : constraints.maxWidth >= 430
+          ? 3
+          : 2;
+      final width = (constraints.maxWidth - (columns - 1) * 8) / columns;
+      return Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: items
+            .map(
+              (item) => SizedBox(
+                width: width,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.$1,
+                      style: AppTextStyles.caption.copyWith(fontSize: 10),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      item.$2,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: AppTextStyles.bodyMedium.copyWith(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+            .toList(),
+      );
+    },
+  );
 }
 
 class _PreviewList extends StatelessWidget {
@@ -1214,7 +2048,23 @@ class _PreviewList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) return Text(empty, style: AppTextStyles.caption);
-    return Column(children: items.map((item) => ListTile(dense: true, contentPadding: EdgeInsets.zero, leading: Icon(item.$3, size: 18), title: Text(item.$1, maxLines: 1, overflow: TextOverflow.ellipsis), trailing: Text(item.$2, style: AppTextStyles.caption))).toList());
+    return Column(
+      children: items
+          .map(
+            (item) => ListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(item.$3, size: 18),
+              title: Text(
+                item.$1,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+              trailing: Text(item.$2, style: AppTextStyles.caption),
+            ),
+          )
+          .toList(),
+    );
   }
 }
 
@@ -1240,14 +2090,24 @@ class _ProfileSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return ListView(
-    padding: const EdgeInsets.all(16),
-    children: List.generate(6, (index) => Container(
-      height: index == 0 ? 210 : 96,
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(color: colors.surfaceContainerHighest, borderRadius: BorderRadius.circular(18), border: Border.all(color: colors.outlineVariant)),
-      child: const LinearProgressIndicator(minHeight: 2, backgroundColor: AppColors.transparent),
-    )),
-  );
+      padding: const EdgeInsets.all(16),
+      children: List.generate(
+        6,
+        (index) => Container(
+          height: index == 0 ? 210 : 96,
+          margin: const EdgeInsets.only(bottom: 10),
+          decoration: BoxDecoration(
+            color: colors.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: colors.outlineVariant),
+          ),
+          child: const LinearProgressIndicator(
+            minHeight: 2,
+            backgroundColor: AppColors.transparent,
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -1261,20 +2121,78 @@ class _ActivityItem {
 List<_ActivityItem> _activities(ProfileOperationsSnapshot data) {
   final result = <_ActivityItem>[];
   for (final record in data.attendance) {
-    if (record.checkInTime != null) result.add(_ActivityItem('Attendance checked in', record.checkInTime!, Icons.login));
-    if (record.breakStartTime != null) result.add(_ActivityItem('Break started', record.breakStartTime!, Icons.free_breakfast_outlined));
-    if (record.checkOutTime != null) result.add(_ActivityItem('Attendance checked out', record.checkOutTime!, Icons.logout));
+    if (record.checkInTime != null) {
+      result.add(
+        _ActivityItem(
+          'Attendance checked in',
+          record.checkInTime!,
+          Icons.login,
+        ),
+      );
+    }
+    if (record.breakStartTime != null) {
+      result.add(
+        _ActivityItem(
+          'Break started',
+          record.breakStartTime!,
+          Icons.free_breakfast_outlined,
+        ),
+      );
+    }
+    if (record.checkOutTime != null) {
+      result.add(
+        _ActivityItem(
+          'Attendance checked out',
+          record.checkOutTime!,
+          Icons.logout,
+        ),
+      );
+    }
   }
   for (final visit in data.visits) {
-    result.add(_ActivityItem('Visit assigned • ${visit.customerName}', visit.assignedAt ?? visit.createdAt, Icons.assignment_ind_outlined));
-    if (visit.checkInTime != null) result.add(_ActivityItem('Visit opened • ${visit.customerName}', visit.checkInTime!, Icons.pin_drop_outlined));
-    if (visit.completedAt != null) result.add(_ActivityItem('Visit completed • ${visit.customerName}', visit.completedAt!, Icons.task_alt));
+    result.add(
+      _ActivityItem(
+        'Visit assigned • ${visit.customerName}',
+        visit.assignedAt ?? visit.createdAt,
+        Icons.assignment_ind_outlined,
+      ),
+    );
+    if (visit.checkInTime != null) {
+      result.add(
+        _ActivityItem(
+          'Visit opened • ${visit.customerName}',
+          visit.checkInTime!,
+          Icons.pin_drop_outlined,
+        ),
+      );
+    }
+    if (visit.completedAt != null) {
+      result.add(
+        _ActivityItem(
+          'Visit completed • ${visit.customerName}',
+          visit.completedAt!,
+          Icons.task_alt,
+        ),
+      );
+    }
   }
   for (final notification in data.notifications) {
-    result.add(_ActivityItem('Notification • ${notification.title}', notification.createdAt, Icons.notifications_outlined));
+    result.add(
+      _ActivityItem(
+        'Notification • ${notification.title}',
+        notification.createdAt,
+        Icons.notifications_outlined,
+      ),
+    );
   }
   for (final complaint in data.complaints) {
-    result.add(_ActivityItem('Complaint • ${complaint.customerName}', complaint.createdAt, Icons.support_agent_outlined));
+    result.add(
+      _ActivityItem(
+        'Complaint • ${complaint.customerName}',
+        complaint.createdAt,
+        Icons.support_agent_outlined,
+      ),
+    );
   }
   result.sort((a, b) => b.time.compareTo(a.time));
   return result;
@@ -1392,8 +2310,7 @@ class _ProfileDetailsDialogState extends State<_ProfileDetailsDialog> {
             children: [
               for (final entry in _controllers.entries)
                 SizedBox(
-                  width: entry.key == 'skills' ||
-                          entry.key == 'certifications'
+                  width: entry.key == 'skills' || entry.key == 'certifications'
                       ? 590
                       : 285,
                   child: TextField(
@@ -1403,9 +2320,9 @@ class _ProfileDetailsDialogState extends State<_ProfileDetailsDialog> {
                       helperText: entry.key == 'joiningDate'
                           ? 'YYYY-MM-DD'
                           : entry.key == 'skills' ||
-                                  entry.key == 'certifications'
-                              ? 'Comma separated'
-                              : null,
+                                entry.key == 'certifications'
+                          ? 'Comma separated'
+                          : null,
                     ),
                   ),
                 ),
@@ -1424,17 +2341,35 @@ class _ProfileDetailsDialogState extends State<_ProfileDetailsDialog> {
   }
 }
 
-Future<void> _updatePrefs(BuildContext context, NotificationPreferencesModel prefs, VoidCallback reload) async {
-  try { await ProfileController.updateNotificationPreferences(prefs); reload(); } catch (error) { if (context.mounted) _unsupported(context, '$error'); }
+Future<void> _updatePrefs(
+  BuildContext context,
+  NotificationPreferencesModel prefs,
+  VoidCallback reload,
+) async {
+  try {
+    await ProfileController.updateNotificationPreferences(prefs);
+    reload();
+  } catch (error) {
+    if (context.mounted) _unsupported(context, '$error');
+  }
 }
 
-Future<void> _editPhone(BuildContext context, String current, VoidCallback reload) async {
+Future<void> _editPhone(
+  BuildContext context,
+  String current,
+  VoidCallback reload,
+) async {
   final value = await showDialog<String>(
     context: context,
     builder: (_) => _PhoneEditDialog(current: current),
   );
   if (value == null) return;
-  try { await ProfileController.updatePhone(value); reload(); } catch (error) { if (context.mounted) _unsupported(context, '$error'); }
+  try {
+    await ProfileController.updatePhone(value);
+    reload();
+  } catch (error) {
+    if (context.mounted) _unsupported(context, '$error');
+  }
 }
 
 Future<void> _editProfileDetails(
@@ -1448,7 +2383,9 @@ Future<void> _editProfileDetails(
   );
   if (values == null) return;
   final joiningText = values['joiningDate']!.trim();
-  final joiningDate = joiningText.isEmpty ? null : DateTime.tryParse(joiningText);
+  final joiningDate = joiningText.isEmpty
+      ? null
+      : DateTime.tryParse(joiningText);
   if (joiningText.isNotEmpty && joiningDate == null) {
     if (context.mounted) {
       _unsupported(context, 'Joining date must use YYYY-MM-DD.');
@@ -1540,9 +2477,7 @@ Future<String?> _selectValue({
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      value[0].toUpperCase() + value.substring(1),
-                    ),
+                    child: Text(value[0].toUpperCase() + value.substring(1)),
                   ),
                   if (value == current) const Icon(Icons.check, size: 18),
                 ],
@@ -1557,24 +2492,54 @@ Future<String?> _selectValue({
 Future<void> _resetPassword(BuildContext context) async {
   try {
     await ProfileController.requestPasswordReset();
-    if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password reset email sent.')));
-  } catch (error) { if (context.mounted) _unsupported(context, '$error'); }
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password reset email sent.')),
+      );
+    }
+  } catch (error) {
+    if (context.mounted) _unsupported(context, '$error');
+  }
 }
 
 Future<void> _logout(BuildContext context) async {
-  final confirmed = await showDialog<bool>(context: context, builder: (context) => AlertDialog(title: const Text('Logout?'), content: const Text('This will end the current OfficeRoute session.'), actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Logout'))])) ?? false;
+  final confirmed =
+      await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Logout?'),
+          content: const Text('This will end the current OfficeRoute session.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Logout'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
   if (confirmed) await ProfileController.logout();
 }
 
-void _push(BuildContext context, Widget screen) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+void _push(BuildContext context, Widget screen) =>
+    Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
 
-void _unsupported(BuildContext context, String message) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+void _unsupported(BuildContext context, String message) => ScaffoldMessenger.of(
+  context,
+).showSnackBar(SnackBar(content: Text(message)));
 
-DateTime _visitDate(CustomerVisitModel visit) => visit.preferredVisitDate ?? visit.createdAt;
+DateTime _visitDate(CustomerVisitModel visit) =>
+    visit.preferredVisitDate ?? visit.createdAt;
 
 bool _isVisitToday(CustomerVisitModel visit, DateTime now) {
   final date = _visitDate(visit);
-  return date.year == now.year && date.month == now.month && date.day == now.day;
+  return date.year == now.year &&
+      date.month == now.month &&
+      date.day == now.day;
 }
 
 String _duration(Duration value) {
@@ -1588,7 +2553,8 @@ String _configured(String value) =>
 
 String _experience(DateTime? joiningDate, DateTime now) {
   if (joiningDate == null || joiningDate.isAfter(now)) return 'Not available';
-  var months = (now.year - joiningDate.year) * 12 + now.month - joiningDate.month;
+  var months =
+      (now.year - joiningDate.year) * 12 + now.month - joiningDate.month;
   if (now.day < joiningDate.day) months--;
   final years = months ~/ 12;
   final remainingMonths = months.remainder(12);
@@ -1654,9 +2620,7 @@ int _personalScore({
 }) {
   final attendance = data.attendance.where((record) {
     final date = record.date;
-    return date != null &&
-        !date.isBefore(start) &&
-        date.isBefore(endExclusive);
+    return date != null && !date.isBefore(start) && date.isBefore(endExclusive);
   }).toList();
   final visits = data.visits.where((visit) {
     final date = _visitDate(visit);
@@ -1665,22 +2629,24 @@ int _personalScore({
   final attendanceRate = attendance.isEmpty
       ? 0.0
       : attendance.where((record) => record.checkInTime != null).length /
-          attendance.length;
+            attendance.length;
   final visitRate = visits.isEmpty
       ? 0.0
       : visits.where((visit) => visit.status == 'completed').length /
-          visits.length;
+            visits.length;
   final gpsEligible = visits
       .where((visit) => visit.checkInTime != null || visit.checkOutTime != null)
       .toList();
   final gpsRate = gpsEligible.isEmpty
       ? 0.0
       : gpsEligible
-              .where((visit) =>
-                  visit.checkInLatitude != null &&
-                  visit.checkOutLatitude != null)
-              .length /
-          gpsEligible.length;
+                .where(
+                  (visit) =>
+                      visit.checkInLatitude != null &&
+                      visit.checkOutLatitude != null,
+                )
+                .length /
+            gpsEligible.length;
   if (attendance.isEmpty && visits.isEmpty) return 0;
   return ((attendanceRate * .35 + visitRate * .45 + gpsRate * .20) * 100)
       .round();
@@ -1694,18 +2660,20 @@ int _employeeScore(
   final visitScore = visits.isEmpty
       ? 0.0
       : visits.where((visit) => visit.status == 'completed').length /
-          visits.length;
+            visits.length;
   final gpsEligible = visits
       .where((visit) => visit.checkInTime != null || visit.checkOutTime != null)
       .toList();
   final gpsScore = gpsEligible.isEmpty
       ? 0.0
       : gpsEligible
-              .where((visit) =>
-                  visit.checkInLatitude != null &&
-                  visit.checkOutLatitude != null)
-              .length /
-          gpsEligible.length;
+                .where(
+                  (visit) =>
+                      visit.checkInLatitude != null &&
+                      visit.checkOutLatitude != null,
+                )
+                .length /
+            gpsEligible.length;
   return ((attendanceScore * .30 + visitScore * .60 + gpsScore * .10) * 100)
       .round();
 }
@@ -1719,14 +2687,21 @@ Map<String, int> _groupScores(
   for (final employee in employees) {
     final group = selector(employee).trim();
     if (group.isEmpty) continue;
-    totals.update(group, (value) => value + employee.score,
-        ifAbsent: () => employee.score);
+    totals.update(
+      group,
+      (value) => value + employee.score,
+      ifAbsent: () => employee.score,
+    );
     counts.update(group, (value) => value + 1, ifAbsent: () => 1);
   }
-  final entries = totals.entries
-      .map((entry) => MapEntry(entry.key, (entry.value / counts[entry.key]!).round()))
-      .toList()
-    ..sort((a, b) => b.value.compareTo(a.value));
+  final entries =
+      totals.entries
+          .map(
+            (entry) =>
+                MapEntry(entry.key, (entry.value / counts[entry.key]!).round()),
+          )
+          .toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
   return Map<String, int>.fromEntries(entries);
 }
 
@@ -1753,7 +2728,8 @@ String _trend(int value) {
 
 String _dateTime(DateTime date) {
   final now = DateTime.now();
-  final sameDay = date.year == now.year && date.month == now.month && date.day == now.day;
+  final sameDay =
+      date.year == now.year && date.month == now.month && date.day == now.day;
   final hour = date.hour % 12 == 0 ? 12 : date.hour % 12;
   final minute = date.minute.toString().padLeft(2, '0');
   final period = date.hour >= 12 ? 'PM' : 'AM';

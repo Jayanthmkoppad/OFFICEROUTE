@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+﻿import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Daily operational shift for a cab driver.
 ///
@@ -44,6 +44,21 @@ class CabDriverShiftModel {
   /// Internal remarks for operations.
   final String remarks;
 
+  /// Starting odometer reading in kilometers.
+  final double startOdometer;
+
+  /// Battery or fuel percentage (0-100).
+  final int batteryPercentage;
+
+  /// Vehicle condition status (e.g. Good, Minor Damage, Needs Maintenance).
+  final String vehicleCondition;
+
+  /// Immutable office destination selected for this duty.
+  final String officeName;
+  final String officeAddress;
+  final double? officeLatitude;
+  final double? officeLongitude;
+
   /// Creates a cab driver shift model.
   const CabDriverShiftModel({
     this.id = '',
@@ -59,6 +74,13 @@ class CabDriverShiftModel {
     this.totalTrips = 0,
     this.totalEmployees = 0,
     this.remarks = '',
+    this.startOdometer = 0.0,
+    this.batteryPercentage = 100,
+    this.vehicleCondition = 'Good',
+    this.officeName = '',
+    this.officeAddress = '',
+    this.officeLatitude,
+    this.officeLongitude,
   });
 
   /// Creates a driver shift model from a Firestore document map.
@@ -80,6 +102,13 @@ class CabDriverShiftModel {
       totalTrips: _parseInt(map['totalTrips']),
       totalEmployees: _parseInt(map['totalEmployees']),
       remarks: (map['remarks'] ?? '').toString(),
+      startOdometer: _parseDouble(map['startOdometer']),
+      batteryPercentage: _parseInt(map['batteryPercentage'] ?? 100),
+      vehicleCondition: (map['vehicleCondition'] ?? 'Good').toString(),
+      officeName: (map['officeName'] ?? '').toString(),
+      officeAddress: (map['officeAddress'] ?? '').toString(),
+      officeLatitude: _parseNullableDouble(map['officeLatitude']),
+      officeLongitude: _parseNullableDouble(map['officeLongitude']),
     );
   }
 
@@ -98,6 +127,13 @@ class CabDriverShiftModel {
       'totalTrips': totalTrips,
       'totalEmployees': totalEmployees,
       'remarks': remarks,
+      'startOdometer': startOdometer,
+      'batteryPercentage': batteryPercentage,
+      'vehicleCondition': vehicleCondition,
+      'officeName': officeName,
+      'officeAddress': officeAddress,
+      'officeLatitude': officeLatitude,
+      'officeLongitude': officeLongitude,
     };
   }
 
@@ -116,6 +152,13 @@ class CabDriverShiftModel {
     if (value is int) return value.toDouble();
     if (value is String) return double.tryParse(value) ?? 0;
     return 0;
+  }
+
+  static double? _parseNullableDouble(Object? value) {
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is String) return double.tryParse(value);
+    return null;
   }
 
   static int _parseInt(Object? value) {

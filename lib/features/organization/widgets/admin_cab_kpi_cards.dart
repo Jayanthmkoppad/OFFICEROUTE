@@ -10,11 +10,13 @@ import '../../../core/services/cab_assignment_service.dart';
 import '../../../core/services/cab_trip_service.dart';
 import '../../../core/services/firestore_service.dart';
 import '../../../core/services/live_location_service.dart';
+import '../../../core/services/passenger_progress_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../core/theme/app_text_styles.dart';
 import '../admin_live_people_map_screen.dart';
 import '../admin_fleet_analytics_screen.dart';
 import '../admin_active_trip_detail_screen.dart';
+import '../../employee/widgets/employee_transport_roster_card.dart';
 
 /// Realtime cab operations KPI strip that lives inside the existing
 /// Administrator dashboard. Values are computed from live Firestore streams
@@ -206,6 +208,41 @@ class _AdminCabKpiCardsState extends State<AdminCabKpiCards> {
               assignments: _assignments,
               drivers: _drivers,
             ),
+          const SizedBox(height: 10),
+          if (activeTrips.isEmpty)
+            const EmployeeTransportRosterCard(
+              progress: [],
+              currentUserId: '',
+              routeLabel: 'No active route for today',
+            )
+          else
+            for (final trip in activeTrips)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: StreamBuilder(
+                  stream: PassengerProgressService.watchPassengerProgress(
+                    trip.id,
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      return const EmployeeTransportRosterCard(
+                        progress: [],
+                        currentUserId: '',
+                        routeLabel: 'Employee progress could not be loaded',
+                      );
+                    }
+                    if (!snapshot.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    return EmployeeTransportRosterCard(
+                      progress: snapshot.data!,
+                      currentUserId: '',
+                      routeLabel:
+                          'Live pickup progress | Trip ${trip.id.length > 8 ? trip.id.substring(0, 8) : trip.id}',
+                    );
+                  },
+                ),
+              ),
           const SizedBox(height: 10),
           Wrap(
             spacing: 8,

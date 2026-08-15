@@ -134,6 +134,8 @@ class LocationSessionModel {
 
   bool get isStopped => status == 'stopped';
 
+  String? get assignmentId => metadata['assignmentId'] as String?;
+
   static DateTime? _parseDateTime(Object? value) {
     if (value is DateTime) return value;
     if (value is Timestamp) return value.toDate();

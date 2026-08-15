@@ -49,6 +49,7 @@ class LocationController {
     await LiveLocationService.markPaused(
       userId: session.userId,
       sessionId: session.id,
+      assignmentId: session.assignmentId,
       trackingReason: session.trackingReason,
     );
     return pausedSession;
@@ -71,13 +72,14 @@ class LocationController {
     await LiveLocationService.markOffline(
       userId: session.userId,
       sessionId: session.id,
+      assignmentId: session.assignmentId,
       trackingReason: session.trackingReason,
     );
     return stoppedSession;
   }
 
   static Future<StreamSubscription<LiveLocationModel>>
-      startForegroundLiveLocationUpdates({
+  startForegroundLiveLocationUpdates({
     required LocationSessionModel session,
     void Function(LiveLocationModel location)? onLocation,
     void Function(Object error, StackTrace stackTrace)? onError,

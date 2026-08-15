@@ -21,29 +21,31 @@ class CustomerVisitController {
     final normalizedQuery = query.trim().toLowerCase();
     if (normalizedQuery.isEmpty) return visits;
 
-    return visits.where((visit) {
-      final values = [
-        visit.customerName,
-        visit.dealerName,
-        visit.customerAddress,
-        visit.customerPhone,
-        visit.dealerPinCode,
-        visit.complaintId,
-        visit.priority,
-        visit.serviceCentreName,
-        visit.purpose,
-        visit.vehicleDetails,
-        visit.vehicleNumber,
-        visit.motorSerialNumber,
-        visit.controllerSerialNumber,
-        visit.batterySerialNumber,
-        visit.issueCategory,
-        visit.issueDescription,
-        visit.status,
-      ].join(' ').toLowerCase();
+    return visits
+        .where((visit) {
+          final values = [
+            visit.customerName,
+            visit.dealerName,
+            visit.customerAddress,
+            visit.customerPhone,
+            visit.dealerPinCode,
+            visit.complaintId,
+            visit.priority,
+            visit.serviceCentreName,
+            visit.purpose,
+            visit.vehicleDetails,
+            visit.vehicleNumber,
+            visit.motorSerialNumber,
+            visit.controllerSerialNumber,
+            visit.batterySerialNumber,
+            visit.issueCategory,
+            visit.issueDescription,
+            visit.status,
+          ].join(' ').toLowerCase();
 
-      return values.contains(normalizedQuery);
-    }).toList(growable: false);
+          return values.contains(normalizedQuery);
+        })
+        .toList(growable: false);
   }
 
   static Future<List<CustomerVisitModel>> loadCustomerHistory(

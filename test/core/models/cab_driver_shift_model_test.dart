@@ -56,6 +56,13 @@ void main() {
         'totalTrips': 0,
         'totalEmployees': 0,
         'remarks': '',
+        'startOdometer': 0.0,
+        'batteryPercentage': 100,
+        'vehicleCondition': 'Good',
+        'officeName': '',
+        'officeAddress': '',
+        'officeLatitude': null,
+        'officeLongitude': null,
       });
     });
   });

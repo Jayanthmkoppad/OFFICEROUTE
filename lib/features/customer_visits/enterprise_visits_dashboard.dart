@@ -48,10 +48,7 @@ class EnterpriseVisitsDashboard extends StatefulWidget {
   final Future<void> Function(DateTime date) onDateChanged;
   final VoidCallback onCreateVisit;
   final ValueChanged<CustomerVisitModel> onOpenVisit;
-  final Future<void> Function(
-    CustomerVisitModel visit,
-    EmployeeModel engineer,
-  )
+  final Future<void> Function(CustomerVisitModel visit, EmployeeModel engineer)
   onAssignEngineer;
   final Future<void> Function(CustomerVisitModel visit) onDuplicateVisit;
   final VoidCallback onOpenMap;
@@ -149,8 +146,7 @@ class _EnterpriseVisitsDashboardState extends State<EnterpriseVisitsDashboard> {
         !serviceCentres.contains(_serviceCentreFilter)) {
       _serviceCentreFilter = 'all';
     }
-    if (_priorityFilter != 'all' &&
-        !priorities.contains(_priorityFilter)) {
+    if (_priorityFilter != 'all' && !priorities.contains(_priorityFilter)) {
       _priorityFilter = 'all';
     }
   }
@@ -644,7 +640,9 @@ class _EnterpriseVisitsDashboardState extends State<EnterpriseVisitsDashboard> {
               ),
               _MorningMetric(
                 label: 'Planned Duration',
-                value: _formatDuration(_expectedWorkDuration(metrics.todayVisits)),
+                value: _formatDuration(
+                  _expectedWorkDuration(metrics.todayVisits),
+                ),
                 tooltip: 'Sum of recorded expected visit durations.',
               ),
             ],
@@ -767,8 +765,7 @@ class _EnterpriseVisitsDashboardState extends State<EnterpriseVisitsDashboard> {
                 icon: Icons.business_outlined,
                 value: _serviceCentreFilter,
                 options: ['all', ...serviceCentres],
-                labelFor: (value) =>
-                    value == 'all' ? 'All Centres' : value,
+                labelFor: (value) => value == 'all' ? 'All Centres' : value,
                 onChanged: (value) =>
                     _setFilter(() => _serviceCentreFilter = value),
               ),
@@ -802,8 +799,7 @@ class _EnterpriseVisitsDashboardState extends State<EnterpriseVisitsDashboard> {
                 icon: Icons.storefront_outlined,
                 value: _dealerFilter,
                 options: ['all', ...dealers],
-                labelFor: (value) =>
-                    value == 'all' ? 'All Dealers' : value,
+                labelFor: (value) => value == 'all' ? 'All Dealers' : value,
                 onChanged: (value) => _setFilter(() => _dealerFilter = value),
               ),
               _CompactDropdownFilter(
@@ -811,20 +807,16 @@ class _EnterpriseVisitsDashboardState extends State<EnterpriseVisitsDashboard> {
                 icon: Icons.verified_user_outlined,
                 value: _warrantyFilter,
                 options: ['all', ...warranties],
-                labelFor: (value) =>
-                    value == 'all' ? 'All Warranty' : value,
-                onChanged: (value) =>
-                    _setFilter(() => _warrantyFilter = value),
+                labelFor: (value) => value == 'all' ? 'All Warranty' : value,
+                onChanged: (value) => _setFilter(() => _warrantyFilter = value),
               ),
               _CompactDropdownFilter(
                 label: 'Priority',
                 icon: Icons.priority_high,
                 value: _priorityFilter,
                 options: ['all', ...priorities],
-                labelFor: (value) =>
-                    value == 'all' ? 'All Priorities' : value,
-                onChanged: (value) =>
-                    _setFilter(() => _priorityFilter = value),
+                labelFor: (value) => value == 'all' ? 'All Priorities' : value,
+                onChanged: (value) => _setFilter(() => _priorityFilter = value),
               ),
             ],
           ),
@@ -916,8 +908,7 @@ class _EnterpriseVisitsDashboardState extends State<EnterpriseVisitsDashboard> {
         .toList(growable: false);
     final waitingCustomer = widget.visits
         .where(
-          (visit) =>
-              visit.resolutionStatus.toLowerCase() == 'waiting_customer',
+          (visit) => visit.resolutionStatus.toLowerCase() == 'waiting_customer',
         )
         .toList(growable: false);
     final waitingParts = widget.visits
@@ -1092,7 +1083,9 @@ class _EnterpriseVisitsDashboardState extends State<EnterpriseVisitsDashboard> {
     DateTime now,
   ) {
     const pageSize = 10;
-    final pageCount = visits.isEmpty ? 1 : (visits.length + pageSize - 1) ~/ pageSize;
+    final pageCount = visits.isEmpty
+        ? 1
+        : (visits.length + pageSize - 1) ~/ pageSize;
     final page = _visitPage >= pageCount ? pageCount - 1 : _visitPage;
     final visible = visits
         .skip(page * pageSize)
@@ -1192,7 +1185,9 @@ class _EnterpriseVisitsDashboardState extends State<EnterpriseVisitsDashboard> {
               message: _hasActiveFilters
                   ? 'Clear one or more filters to restore the operations board.'
                   : 'This queue will update automatically when visit data changes.',
-              actionLabel: _hasActiveFilters ? 'Clear Filters' : 'Visit Planner',
+              actionLabel: _hasActiveFilters
+                  ? 'Clear Filters'
+                  : 'Visit Planner',
               onAction: _hasActiveFilters
                   ? _clearFilters
                   : widget.onCreateVisit,
@@ -1373,12 +1368,24 @@ class _EnterpriseVisitsDashboardState extends State<EnterpriseVisitsDashboard> {
                     spacing: 7,
                     runSpacing: 7,
                     children: [
-                      _RequirementChip(label: 'Service-centre registry', available: true),
-                      _RequirementChip(label: 'Engineer ranking', available: true),
+                      _RequirementChip(
+                        label: 'Service-centre registry',
+                        available: true,
+                      ),
+                      _RequirementChip(
+                        label: 'Engineer ranking',
+                        available: true,
+                      ),
                       _RequirementChip(label: 'Current GPS', available: true),
                       _RequirementChip(label: 'Workload', available: true),
-                      _RequirementChip(label: 'Centre membership', available: false),
-                      _RequirementChip(label: 'ETA / Traffic', available: false),
+                      _RequirementChip(
+                        label: 'Centre membership',
+                        available: false,
+                      ),
+                      _RequirementChip(
+                        label: 'ETA / Traffic',
+                        available: false,
+                      ),
                     ],
                   ),
                 ],
@@ -1800,12 +1807,14 @@ class _EnterpriseVisitsDashboardState extends State<EnterpriseVisitsDashboard> {
                       'Alerts appear when collected serial, diagnostic, resolution, and duration data crosses a rule threshold.',
                 )
               else
-                ...alerts.take(8).map(
-                  (alert) => Padding(
-                    padding: const EdgeInsets.only(bottom: 7),
-                    child: _TechnicalAlertRow(alert: alert),
-                  ),
-                ),
+                ...alerts
+                    .take(8)
+                    .map(
+                      (alert) => Padding(
+                        padding: const EdgeInsets.only(bottom: 7),
+                        child: _TechnicalAlertRow(alert: alert),
+                      ),
+                    ),
               const SizedBox(height: 4),
               Text(
                 'Threshold rules: repeated asset = 3 visits, overheating = 2 readings at 80 C, carry-forward = 2 visits, missed checkout = 12 h, long repair = 8 h.',
@@ -1991,15 +2000,14 @@ class _EnterpriseVisitsDashboardState extends State<EnterpriseVisitsDashboard> {
 
   Future<void> _chooseEngineer(CustomerVisitModel visit) async {
     if (widget.employees.isEmpty) {
-      _showUnavailable(
-        'No employee profiles are available for assignment.',
-      );
+      _showUnavailable('No employee profiles are available for assignment.');
       return;
     }
 
     final employees = widget.employees.toList()
-      ..sort((left, right) =>
-          _employeeName(left).compareTo(_employeeName(right)));
+      ..sort(
+        (left, right) => _employeeName(left).compareTo(_employeeName(right)),
+      );
     final selected = await showDialog<EmployeeModel>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -2198,7 +2206,8 @@ class _EnterpriseVisitsDashboardState extends State<EnterpriseVisitsDashboard> {
           (_issueFilter == 'all' ||
               _visitIssueCategories(visit).contains(_issueFilter)) &&
           (_vehicleFilter == 'all' || visit.vehicleDetails == _vehicleFilter) &&
-          (_warrantyFilter == 'all' || visit.warrantyStatus == _warrantyFilter) &&
+          (_warrantyFilter == 'all' ||
+              visit.warrantyStatus == _warrantyFilter) &&
           (_serviceCentreFilter == 'all' ||
               visit.serviceCentreName == _serviceCentreFilter) &&
           (_priorityFilter == 'all' || visit.priority == _priorityFilter);
@@ -2307,11 +2316,10 @@ class _VisitKpi {
     this.icon,
     String reason, {
     required this.onTap,
-  })
-    : value = '--',
-      color = AppColors.textDisabled,
-      info = reason,
-      selected = false;
+  }) : value = '--',
+       color = AppColors.textDisabled,
+       info = reason,
+       selected = false;
 }
 
 class _VisitKpiCard extends StatelessWidget {
@@ -2322,9 +2330,7 @@ class _VisitKpiCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final card = Material(
-      color: kpi.selected
-          ? kpi.color.withAlpha(20)
-          : Colors.white.withAlpha(8),
+      color: kpi.selected ? kpi.color.withAlpha(20) : Colors.white.withAlpha(8),
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
@@ -2550,7 +2556,10 @@ class _EngineerWorkloadCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 6),
-              PremiumStatusChip(label: data.healthLabel, color: data.healthColor),
+              PremiumStatusChip(
+                label: data.healthLabel,
+                color: data.healthColor,
+              ),
             ],
           ),
           const SizedBox(height: 9),
@@ -2896,7 +2905,9 @@ class _VisitBoardColumn extends StatelessWidget {
                   borderRadius: BorderRadius.circular(99),
                 ),
                 child: Text(
-                  data.unavailableReason == null ? '${data.visits.length}' : '--',
+                  data.unavailableReason == null
+                      ? '${data.visits.length}'
+                      : '--',
                   style: AppTextStyles.caption.copyWith(
                     color: data.color,
                     fontWeight: FontWeight.w800,
@@ -2930,8 +2941,7 @@ class _VisitBoardColumn extends StatelessWidget {
             Expanded(
               child: ListView.separated(
                 itemCount: visible.length,
-                separatorBuilder: (context, index) =>
-                    const SizedBox(height: 6),
+                separatorBuilder: (context, index) => const SizedBox(height: 6),
                 itemBuilder: (context, index) {
                   final visit = visible[index];
                   return _VisitBoardTile(
@@ -3126,51 +3136,62 @@ class _EnterpriseVisitsTable extends StatelessWidget {
             DataColumn(label: Text('Updated')),
             DataColumn(label: Text('Actions')),
           ],
-          rows: visits.map((visit) {
-            final status = _statusData(visit.status);
-            final complaint = visit.issueCategory.isEmpty
-                ? visit.purpose
-                : visit.issueCategory;
-            return DataRow(
-              onSelectChanged: (_) => onOpenVisit(visit),
-              cells: [
-                DataCell(Text(_shortId(visit.id))),
-                DataCell(_TableText(complaint)),
-                DataCell(_TableText(visit.dealerName)),
-                DataCell(_TableText(visit.customerName)),
-                DataCell(_TableText(_employeeName(employeesById[visit.userId]))),
-                DataCell(_TableText(visit.serviceCentreName)),
-                DataCell(_TableText(visit.priority)),
-                DataCell(_TableText(visit.warrantyStatus)),
-                DataCell(PremiumStatusChip(label: status.label, color: status.color)),
-                DataCell(
-                  visit.roadDistanceKm == null
-                      ? const _UnavailableTableValue(
-                          reason: 'Requires Google Directions API',
-                        )
-                      : Text('${visit.roadDistanceKm!.toStringAsFixed(1)} km'),
-                ),
-                DataCell(
-                  visit.estimatedTravelMinutes == null
-                      ? const _UnavailableTableValue(
-                          reason: 'Requires Google Directions API',
-                        )
-                      : Text('${visit.estimatedTravelMinutes} min'),
-                ),
-                DataCell(Text(status.label)),
-                DataCell(Text(_formatDateTime(visit.createdAt))),
-                DataCell(Text(_formatDateTime(visit.updatedAt))),
-                DataCell(
-                  _VisitActionsMenu(
-                    onOpen: () => onOpenVisit(visit),
-                    onAssign: () => onAssignEngineer(visit),
-                    onDuplicate: () => unawaited(onDuplicateVisit(visit)),
-                    onOpenMap: onOpenMap,
-                  ),
-                ),
-              ],
-            );
-          }).toList(growable: false),
+          rows: visits
+              .map((visit) {
+                final status = _statusData(visit.status);
+                final complaint = visit.issueCategory.isEmpty
+                    ? visit.purpose
+                    : visit.issueCategory;
+                return DataRow(
+                  onSelectChanged: (_) => onOpenVisit(visit),
+                  cells: [
+                    DataCell(Text(_shortId(visit.id))),
+                    DataCell(_TableText(complaint)),
+                    DataCell(_TableText(visit.dealerName)),
+                    DataCell(_TableText(visit.customerName)),
+                    DataCell(
+                      _TableText(_employeeName(employeesById[visit.userId])),
+                    ),
+                    DataCell(_TableText(visit.serviceCentreName)),
+                    DataCell(_TableText(visit.priority)),
+                    DataCell(_TableText(visit.warrantyStatus)),
+                    DataCell(
+                      PremiumStatusChip(
+                        label: status.label,
+                        color: status.color,
+                      ),
+                    ),
+                    DataCell(
+                      visit.roadDistanceKm == null
+                          ? const _UnavailableTableValue(
+                              reason: 'Requires Google Directions API',
+                            )
+                          : Text(
+                              '${visit.roadDistanceKm!.toStringAsFixed(1)} km',
+                            ),
+                    ),
+                    DataCell(
+                      visit.estimatedTravelMinutes == null
+                          ? const _UnavailableTableValue(
+                              reason: 'Requires Google Directions API',
+                            )
+                          : Text('${visit.estimatedTravelMinutes} min'),
+                    ),
+                    DataCell(Text(status.label)),
+                    DataCell(Text(_formatDateTime(visit.createdAt))),
+                    DataCell(Text(_formatDateTime(visit.updatedAt))),
+                    DataCell(
+                      _VisitActionsMenu(
+                        onOpen: () => onOpenVisit(visit),
+                        onAssign: () => onAssignEngineer(visit),
+                        onDuplicate: () => unawaited(onDuplicateVisit(visit)),
+                        onOpenMap: onOpenMap,
+                      ),
+                    ),
+                  ],
+                );
+              })
+              .toList(growable: false),
         ),
       ),
     );
@@ -3600,10 +3621,7 @@ class _TechnicalAnalyticsGroup extends StatelessWidget {
   final String title;
   final List<Widget> panels;
 
-  const _TechnicalAnalyticsGroup({
-    required this.title,
-    required this.panels,
-  });
+  const _TechnicalAnalyticsGroup({required this.title, required this.panels});
 
   @override
   Widget build(BuildContext context) {
@@ -3624,10 +3642,7 @@ class _FirstTimeFixPanel extends StatelessWidget {
   final Map<String, double> values;
   final Map<String, EmployeeModel> employeesById;
 
-  const _FirstTimeFixPanel({
-    required this.values,
-    required this.employeesById,
-  });
+  const _FirstTimeFixPanel({required this.values, required this.employeesById});
 
   @override
   Widget build(BuildContext context) {
@@ -3647,42 +3662,44 @@ class _FirstTimeFixPanel extends StatelessWidget {
             style: AppTextStyles.caption,
           )
         else
-          ...entries.take(5).map(
-            (entry) => Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _employeeName(employeesById[entry.key]),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: AppTextStyles.caption,
-                    ),
+          ...entries
+              .take(5)
+              .map(
+                (entry) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _employeeName(employeesById[entry.key]),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTextStyles.caption,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 120,
+                        child: LinearProgressIndicator(
+                          value: (entry.value / 100).clamp(0.0, 1.0).toDouble(),
+                          minHeight: 6,
+                          color: AppColors.success,
+                          backgroundColor: Colors.white.withAlpha(12),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 42,
+                        child: Text(
+                          '${entry.value.toStringAsFixed(0)}%',
+                          textAlign: TextAlign.end,
+                          style: AppTextStyles.caption,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 120,
-                    child: LinearProgressIndicator(
-                      value: (entry.value / 100).clamp(0.0, 1.0).toDouble(),
-                      minHeight: 6,
-                      color: AppColors.success,
-                      backgroundColor: Colors.white.withAlpha(12),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    width: 42,
-                    child: Text(
-                      '${entry.value.toStringAsFixed(0)}%',
-                      textAlign: TextAlign.end,
-                      style: AppTextStyles.caption,
-                    ),
-                  ),
-                ],
+                ),
               ),
-            ),
-          ),
       ],
     );
   }
@@ -4052,7 +4069,10 @@ class _VisitOperationsMetrics {
           .where((visit) => !_isVisitClosed(visit))
           .length;
       final visitDays = employeeVisits
-          .map((visit) => '${visit.createdAt.year}-${visit.createdAt.month}-${visit.createdAt.day}')
+          .map(
+            (visit) =>
+                '${visit.createdAt.year}-${visit.createdAt.month}-${visit.createdAt.day}',
+          )
           .toSet();
       final averageDailyVisits = visitDays.isEmpty
           ? 0.0
@@ -4119,7 +4139,9 @@ class _VisitOperationsMetrics {
           .length;
       final overloaded = openVisits >= 5 || carriedForEngineer >= 2;
       final atRisk =
-          !overloaded && openVisits > 0 && (status == 'Offline' || openVisits >= 3);
+          !overloaded &&
+          openVisits > 0 &&
+          (status == 'Offline' || openVisits >= 3);
       final healthColor = overloaded
           ? AppColors.error
           : atRisk
@@ -4417,19 +4439,26 @@ class _TechnicalOperationsMetrics {
         _incrementCount(motorModels, visit.motorModel);
         _incrementCount(controllerModels, visit.controllerModel);
         _incrementCount(batteryModels, visit.batteryModel);
-        final resolvedAt = visit.completedAt ?? visit.checkOutTime ?? visit.updatedAt;
+        final resolvedAt =
+            visit.completedAt ?? visit.checkOutTime ?? visit.updatedAt;
         _incrementCount(monthlyRepairs, _technicalMonthKey(resolvedAt));
         final duration = visit.visitDuration(now);
         if (duration > Duration.zero) repairDurations.add(duration);
       }
-      final diagnosisStarts = visit.technicalTimeline
-          .where((event) => event.eventType == 'diagnosis_started')
-          .toList()
-        ..sort((left, right) => left.occurredAt.compareTo(right.occurredAt));
-      final diagnosisEnds = visit.technicalTimeline
-          .where((event) => event.eventType == 'diagnosis_completed')
-          .toList()
-        ..sort((left, right) => left.occurredAt.compareTo(right.occurredAt));
+      final diagnosisStarts =
+          visit.technicalTimeline
+              .where((event) => event.eventType == 'diagnosis_started')
+              .toList()
+            ..sort(
+              (left, right) => left.occurredAt.compareTo(right.occurredAt),
+            );
+      final diagnosisEnds =
+          visit.technicalTimeline
+              .where((event) => event.eventType == 'diagnosis_completed')
+              .toList()
+            ..sort(
+              (left, right) => left.occurredAt.compareTo(right.occurredAt),
+            );
       if (diagnosisStarts.isNotEmpty && diagnosisEnds.isNotEmpty) {
         final startedAt = diagnosisStarts.first.occurredAt;
         DateTime? completedAt;
@@ -4465,7 +4494,8 @@ class _TechnicalOperationsMetrics {
       final asset = _technicalAssetKey(visit);
       if (asset.isEmpty || visit.userId.isEmpty) continue;
       final visitIssues = _visitIssueCategories(visit).toSet();
-      final resolvedAt = visit.completedAt ?? visit.checkOutTime ?? visit.updatedAt;
+      final resolvedAt =
+          visit.completedAt ?? visit.checkOutTime ?? visit.updatedAt;
       final hasLaterRepeat = sortedVisits.any((candidate) {
         if (!candidate.createdAt.isAfter(resolvedAt) ||
             _technicalAssetKey(candidate) != asset) {
@@ -4504,8 +4534,7 @@ class _TechnicalOperationsMetrics {
       repairRunningCount: visits.where(_isRepairRunningVisit).length,
       waitingPartsCount: visits
           .where(
-            (visit) =>
-                visit.resolutionStatus.toLowerCase() == 'waiting_parts',
+            (visit) => visit.resolutionStatus.toLowerCase() == 'waiting_parts',
           )
           .length,
       faultCategories: faultCategories,
@@ -4780,10 +4809,7 @@ List<_TechnicalAlert> _buildTechnicalAlerts({
       visit.diagnosticReadings['motorTemperature'],
     );
     if (motorTemperature != null && motorTemperature >= 80) {
-      _incrementAssetSerialCount(
-        motorOverheatCounts,
-        visit.motorSerialNumber,
-      );
+      _incrementAssetSerialCount(motorOverheatCounts, visit.motorSerialNumber);
     }
     if (visit.resolutionStatus.toLowerCase() == 'carry_forward') {
       final asset = _technicalAssetKey(visit);
@@ -4909,10 +4935,9 @@ List<MapEntry<String, int>> _highestThresholdEntries(
   Map<String, int> values,
   int threshold,
 ) {
-  final entries = values.entries
-      .where((entry) => entry.value >= threshold)
-      .toList()
-    ..sort((left, right) => right.value.compareTo(left.value));
+  final entries =
+      values.entries.where((entry) => entry.value >= threshold).toList()
+        ..sort((left, right) => right.value.compareTo(left.value));
   return entries.take(3).toList(growable: false);
 }
 

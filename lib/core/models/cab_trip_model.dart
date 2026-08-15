@@ -20,6 +20,17 @@ class CabTripModel {
   /// Reference to `cab_vehicles/{vehicleId}`.
   final String vehicleId;
 
+  /// Employee user ids linked to this trip.
+  final List<String> employeeIds;
+
+  /// Configured office destination and operational scope.
+  final String officeName;
+  final String officeAddress;
+  final double? officeLatitude;
+  final double? officeLongitude;
+  final String branch;
+  final String serviceCentre;
+
   /// Trip status, for example `created`, `active`, or `completed`.
   final String status;
 
@@ -43,6 +54,10 @@ class CabTripModel {
 
   /// Internal remarks for operations.
   final String remarks;
+  final String cancellationReason;
+  final String cancellationExplanation;
+  final String cancelledBy;
+  final DateTime? cancelledAt;
   final double distanceKm;
   final int durationSeconds;
   final int drivingSeconds;
@@ -55,6 +70,13 @@ class CabTripModel {
     this.dateKey = '',
     this.driverId = '',
     this.vehicleId = '',
+    this.employeeIds = const <String>[],
+    this.officeName = '',
+    this.officeAddress = '',
+    this.officeLatitude,
+    this.officeLongitude,
+    this.branch = '',
+    this.serviceCentre = '',
     this.status = 'created',
     this.activeLocationSessionId = '',
     this.createdAt,
@@ -63,6 +85,10 @@ class CabTripModel {
     this.completedAt,
     this.updatedAt,
     this.remarks = '',
+    this.cancellationReason = '',
+    this.cancellationExplanation = '',
+    this.cancelledBy = '',
+    this.cancelledAt,
     this.distanceKm = 0,
     this.durationSeconds = 0,
     this.drivingSeconds = 0,
@@ -77,6 +103,13 @@ class CabTripModel {
       dateKey: (map['dateKey'] ?? '').toString(),
       driverId: (map['driverId'] ?? '').toString(),
       vehicleId: (map['vehicleId'] ?? '').toString(),
+      employeeIds: _parseStringList(map['employeeIds']),
+      officeName: (map['officeName'] ?? '').toString(),
+      officeAddress: (map['officeAddress'] ?? '').toString(),
+      officeLatitude: _parseNullableDouble(map['officeLatitude']),
+      officeLongitude: _parseNullableDouble(map['officeLongitude']),
+      branch: (map['branch'] ?? '').toString(),
+      serviceCentre: (map['serviceCentre'] ?? '').toString(),
       status: (map['status'] ?? 'created').toString(),
       activeLocationSessionId: (map['activeLocationSessionId'] ?? '')
           .toString(),
@@ -86,6 +119,11 @@ class CabTripModel {
       completedAt: _parseDateTime(map['completedAt']),
       updatedAt: _parseDateTime(map['updatedAt']),
       remarks: (map['remarks'] ?? '').toString(),
+      cancellationReason: (map['cancellationReason'] ?? '').toString(),
+      cancellationExplanation: (map['cancellationExplanation'] ?? '')
+          .toString(),
+      cancelledBy: (map['cancelledBy'] ?? '').toString(),
+      cancelledAt: _parseDateTime(map['cancelledAt']),
       distanceKm: _parseDouble(map['distanceKm']),
       durationSeconds: _parseInt(map['durationSeconds']),
       drivingSeconds: _parseInt(map['drivingSeconds']),
@@ -100,6 +138,13 @@ class CabTripModel {
       'dateKey': dateKey,
       'driverId': driverId,
       'vehicleId': vehicleId,
+      'employeeIds': employeeIds,
+      'officeName': officeName,
+      'officeAddress': officeAddress,
+      'officeLatitude': officeLatitude,
+      'officeLongitude': officeLongitude,
+      'branch': branch,
+      'serviceCentre': serviceCentre,
       'status': status,
       'activeLocationSessionId': activeLocationSessionId,
       'createdAt': createdAt == null ? null : Timestamp.fromDate(createdAt!),
@@ -112,6 +157,12 @@ class CabTripModel {
           : Timestamp.fromDate(completedAt!),
       'updatedAt': updatedAt == null ? null : Timestamp.fromDate(updatedAt!),
       'remarks': remarks,
+      'cancellationReason': cancellationReason,
+      'cancellationExplanation': cancellationExplanation,
+      'cancelledBy': cancelledBy,
+      'cancelledAt': cancelledAt == null
+          ? null
+          : Timestamp.fromDate(cancelledAt!),
       'distanceKm': distanceKm,
       'durationSeconds': durationSeconds,
       'drivingSeconds': drivingSeconds,
@@ -126,6 +177,13 @@ class CabTripModel {
     String? dateKey,
     String? driverId,
     String? vehicleId,
+    List<String>? employeeIds,
+    String? officeName,
+    String? officeAddress,
+    double? officeLatitude,
+    double? officeLongitude,
+    String? branch,
+    String? serviceCentre,
     String? status,
     String? activeLocationSessionId,
     DateTime? createdAt,
@@ -134,6 +192,10 @@ class CabTripModel {
     DateTime? completedAt,
     DateTime? updatedAt,
     String? remarks,
+    String? cancellationReason,
+    String? cancellationExplanation,
+    String? cancelledBy,
+    DateTime? cancelledAt,
     double? distanceKm,
     int? durationSeconds,
     int? drivingSeconds,
@@ -145,6 +207,13 @@ class CabTripModel {
       dateKey: dateKey ?? this.dateKey,
       driverId: driverId ?? this.driverId,
       vehicleId: vehicleId ?? this.vehicleId,
+      employeeIds: employeeIds ?? this.employeeIds,
+      officeName: officeName ?? this.officeName,
+      officeAddress: officeAddress ?? this.officeAddress,
+      officeLatitude: officeLatitude ?? this.officeLatitude,
+      officeLongitude: officeLongitude ?? this.officeLongitude,
+      branch: branch ?? this.branch,
+      serviceCentre: serviceCentre ?? this.serviceCentre,
       status: status ?? this.status,
       activeLocationSessionId:
           activeLocationSessionId ?? this.activeLocationSessionId,
@@ -154,6 +223,11 @@ class CabTripModel {
       completedAt: completedAt ?? this.completedAt,
       updatedAt: updatedAt ?? this.updatedAt,
       remarks: remarks ?? this.remarks,
+      cancellationReason: cancellationReason ?? this.cancellationReason,
+      cancellationExplanation:
+          cancellationExplanation ?? this.cancellationExplanation,
+      cancelledBy: cancelledBy ?? this.cancelledBy,
+      cancelledAt: cancelledAt ?? this.cancelledAt,
       distanceKm: distanceKm ?? this.distanceKm,
       durationSeconds: durationSeconds ?? this.durationSeconds,
       drivingSeconds: drivingSeconds ?? this.drivingSeconds,
@@ -169,6 +243,16 @@ class CabTripModel {
       return DateTime.tryParse(value);
     }
     return null;
+  }
+
+  static double? _parseNullableDouble(Object? value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse('$value');
+  }
+
+  static List<String> _parseStringList(Object? value) {
+    if (value is! List) return const <String>[];
+    return value.map((item) => item.toString()).toList(growable: false);
   }
 
   static double _parseDouble(Object? value) {

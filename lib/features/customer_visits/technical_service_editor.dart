@@ -73,9 +73,7 @@ class _TechnicalServiceEditorDialogState
       'batterySerialNumber': TextEditingController(
         text: _visit.batterySerialNumber,
       ),
-      'batteryChemistry': TextEditingController(
-        text: _visit.batteryChemistry,
-      ),
+      'batteryChemistry': TextEditingController(text: _visit.batteryChemistry),
       'batteryCapacity': TextEditingController(text: _visit.batteryCapacity),
       'batteryNominalVoltage': TextEditingController(
         text: _visit.batteryNominalVoltage,
@@ -108,9 +106,7 @@ class _TechnicalServiceEditorDialogState
     _recommendationController = TextEditingController(
       text: _visit.engineerRecommendation,
     );
-    _partsController = TextEditingController(
-      text: _visit.partsUsed.join(', '),
-    );
+    _partsController = TextEditingController(text: _visit.partsUsed.join(', '));
     _selectedIssues = <String>{
       ..._visit.issueCategories,
       if (_visit.issueCategories.isEmpty && _visit.issueCategory.isNotEmpty)
@@ -119,9 +115,8 @@ class _TechnicalServiceEditorDialogState
     _warrantyStatus = _visit.warrantyStatus.isEmpty
         ? 'Unknown'
         : _visit.warrantyStatus;
-    _resolutionStatus = technicalResolutionStatuses.contains(
-      _visit.resolutionStatus,
-    )
+    _resolutionStatus =
+        technicalResolutionStatuses.contains(_visit.resolutionStatus)
         ? _visit.resolutionStatus
         : 'pending';
     _motorManufacturingDate = _visit.motorManufacturingDate;
@@ -182,10 +177,22 @@ class _TechnicalServiceEditorDialogState
                   isScrollable: true,
                   tabAlignment: TabAlignment.start,
                   tabs: [
-                    Tab(icon: Icon(Icons.directions_car_outlined), text: 'Equipment'),
-                    Tab(icon: Icon(Icons.monitor_heart_outlined), text: 'Diagnostics'),
-                    Tab(icon: Icon(Icons.troubleshoot_outlined), text: 'Root Cause'),
-                    Tab(icon: Icon(Icons.verified_outlined), text: 'Resolution'),
+                    Tab(
+                      icon: Icon(Icons.directions_car_outlined),
+                      text: 'Equipment',
+                    ),
+                    Tab(
+                      icon: Icon(Icons.monitor_heart_outlined),
+                      text: 'Diagnostics',
+                    ),
+                    Tab(
+                      icon: Icon(Icons.troubleshoot_outlined),
+                      text: 'Root Cause',
+                    ),
+                    Tab(
+                      icon: Icon(Icons.verified_outlined),
+                      text: 'Resolution',
+                    ),
                   ],
                 ),
                 if (_validationMessage != null)
@@ -277,20 +284,23 @@ class _TechnicalServiceEditorDialogState
                 ),
                 DropdownButtonFormField<String>(
                   initialValue: _warrantyStatus,
-                  decoration: const InputDecoration(labelText: 'Warranty Status'),
-                  items: <String>{
-                    'Under Warranty',
-                    'Out of Warranty',
-                    'Unknown',
-                    _warrantyStatus,
-                  }
-                      .map(
-                        (status) => DropdownMenuItem(
-                          value: status,
-                          child: Text(status),
-                        ),
-                      )
-                      .toList(growable: false),
+                  decoration: const InputDecoration(
+                    labelText: 'Warranty Status',
+                  ),
+                  items:
+                      <String>{
+                            'Under Warranty',
+                            'Out of Warranty',
+                            'Unknown',
+                            _warrantyStatus,
+                          }
+                          .map(
+                            (status) => DropdownMenuItem(
+                              value: status,
+                              child: Text(status),
+                            ),
+                          )
+                          .toList(growable: false),
                   onChanged: (value) {
                     if (value != null) setState(() => _warrantyStatus = value);
                   },
@@ -410,22 +420,24 @@ class _TechnicalServiceEditorDialogState
             child: Wrap(
               spacing: 7,
               runSpacing: 7,
-              children: categories.map((category) {
-                final selected = _selectedIssues.contains(category);
-                return FilterChip(
-                  label: Text(category),
-                  selected: selected,
-                  onSelected: (enabled) {
-                    setState(() {
-                      if (enabled) {
-                        _selectedIssues.add(category);
-                      } else {
-                        _selectedIssues.remove(category);
-                      }
-                    });
-                  },
-                );
-              }).toList(growable: false),
+              children: categories
+                  .map((category) {
+                    final selected = _selectedIssues.contains(category);
+                    return FilterChip(
+                      label: Text(category),
+                      selected: selected,
+                      onSelected: (enabled) {
+                        setState(() {
+                          if (enabled) {
+                            _selectedIssues.add(category);
+                          } else {
+                            _selectedIssues.remove(category);
+                          }
+                        });
+                      },
+                    );
+                  })
+                  .toList(growable: false),
             ),
           ),
           const SizedBox(height: 10),
@@ -509,9 +521,8 @@ class _TechnicalServiceEditorDialogState
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             DropdownButtonFormField<String>(
-              initialValue: technicalResolutionStatuses.contains(
-                _resolutionStatus,
-              )
+              initialValue:
+                  technicalResolutionStatuses.contains(_resolutionStatus)
                   ? _resolutionStatus
                   : 'pending',
               decoration: const InputDecoration(labelText: 'Resolution Status'),
@@ -567,23 +578,18 @@ class _TechnicalServiceEditorDialogState
         motorModel: _equipment['motorModel']!.text.trim(),
         motorSerialNumber: _equipment['motorSerialNumber']!.text.trim(),
         motorManufacturingDate: _motorManufacturingDate,
-        motorWarrantyStatus:
-            _equipment['motorWarrantyStatus']!.text.trim(),
+        motorWarrantyStatus: _equipment['motorWarrantyStatus']!.text.trim(),
         controllerModel: _equipment['controllerModel']!.text.trim(),
-        controllerSerialNumber:
-            _equipment['controllerSerialNumber']!.text.trim(),
-        controllerFirmware:
-            _equipment['controllerFirmware']!.text.trim(),
+        controllerSerialNumber: _equipment['controllerSerialNumber']!.text
+            .trim(),
+        controllerFirmware: _equipment['controllerFirmware']!.text.trim(),
         controllerManufacturingDate: _controllerManufacturingDate,
         batteryModel: _equipment['batteryModel']!.text.trim(),
-        batterySerialNumber:
-            _equipment['batterySerialNumber']!.text.trim(),
+        batterySerialNumber: _equipment['batterySerialNumber']!.text.trim(),
         batteryChemistry: _equipment['batteryChemistry']!.text.trim(),
         batteryCapacity: _equipment['batteryCapacity']!.text.trim(),
-        batteryNominalVoltage:
-            _equipment['batteryNominalVoltage']!.text.trim(),
-        batteryWarrantyStatus:
-            _equipment['batteryWarrantyStatus']!.text.trim(),
+        batteryNominalVoltage: _equipment['batteryNominalVoltage']!.text.trim(),
+        batteryWarrantyStatus: _equipment['batteryWarrantyStatus']!.text.trim(),
         chargerModel: _equipment['chargerModel']!.text.trim(),
         vehicleOdometer: odometer,
         hoursRun: hoursRun,
@@ -645,10 +651,7 @@ class _TechnicalChecklistEditorDialogState
     _items = <TechnicalChecklistItem>[
       for (final definition in technicalChecklistDefinitions.entries)
         existingById.remove(definition.key) ??
-            TechnicalChecklistItem(
-              id: definition.key,
-              label: definition.value,
-            ),
+            TechnicalChecklistItem(id: definition.key, label: definition.value),
       ...existingById.values,
     ];
     _comments = <String, TextEditingController>{
@@ -875,8 +878,7 @@ class _EditorGrid extends StatelessWidget {
       builder: (context, constraints) {
         final columns = constraints.maxWidth >= 560 ? 2 : 1;
         const gap = 9.0;
-        final width =
-            (constraints.maxWidth - ((columns - 1) * gap)) / columns;
+        final width = (constraints.maxWidth - ((columns - 1) * gap)) / columns;
         return Wrap(
           spacing: gap,
           runSpacing: gap,
@@ -922,7 +924,11 @@ class _ReadOnlyField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return InputDecorator(
-      decoration: InputDecoration(labelText: label, enabled: false, isDense: true),
+      decoration: InputDecoration(
+        labelText: label,
+        enabled: false,
+        isDense: true,
+      ),
       child: Text(
         value.trim().isEmpty ? 'Not recorded' : value,
         maxLines: 1,

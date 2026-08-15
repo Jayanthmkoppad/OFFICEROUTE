@@ -4,6 +4,7 @@ import 'package:geolocator/geolocator.dart';
 class LiveLocationModel {
   final String userId;
   final String sessionId;
+  final String? assignmentId;
   final String trackingReason;
   final String status;
   final double latitude;
@@ -21,6 +22,7 @@ class LiveLocationModel {
   const LiveLocationModel({
     required this.userId,
     required this.sessionId,
+    this.assignmentId,
     required this.trackingReason,
     required this.status,
     required this.latitude,
@@ -39,6 +41,7 @@ class LiveLocationModel {
   factory LiveLocationModel.fromPosition({
     required String userId,
     required String sessionId,
+    String? assignmentId,
     required String trackingReason,
     required String status,
     required Position position,
@@ -51,6 +54,7 @@ class LiveLocationModel {
     return LiveLocationModel(
       userId: userId,
       sessionId: sessionId,
+      assignmentId: assignmentId,
       trackingReason: trackingReason,
       status: status,
       latitude: position.latitude,
@@ -71,6 +75,7 @@ class LiveLocationModel {
     return LiveLocationModel(
       userId: map['userId'] ?? '',
       sessionId: map['sessionId'] ?? '',
+      assignmentId: map['assignmentId'] as String?,
       trackingReason: map['trackingReason'] ?? '',
       status: map['status'] ?? '',
       latitude: _parseDouble(map['latitude']),
@@ -91,6 +96,7 @@ class LiveLocationModel {
     return {
       'userId': userId,
       'sessionId': sessionId,
+      'assignmentId': assignmentId,
       'trackingReason': trackingReason,
       'status': status,
       'latitude': latitude,
@@ -110,6 +116,7 @@ class LiveLocationModel {
   LiveLocationModel copyWith({
     String? userId,
     String? sessionId,
+    String? assignmentId,
     String? trackingReason,
     String? status,
     double? latitude,
@@ -127,6 +134,7 @@ class LiveLocationModel {
     return LiveLocationModel(
       userId: userId ?? this.userId,
       sessionId: sessionId ?? this.sessionId,
+      assignmentId: assignmentId ?? this.assignmentId,
       trackingReason: trackingReason ?? this.trackingReason,
       status: status ?? this.status,
       latitude: latitude ?? this.latitude,

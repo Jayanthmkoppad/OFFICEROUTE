@@ -24,16 +24,9 @@ const technicalIssueCategories = <String>[
 const technicalDiagnosticFields = <TechnicalFieldDefinition>[
   TechnicalFieldDefinition('errorCode', 'Error Code'),
   TechnicalFieldDefinition('ledBlinkPattern', 'LED Blink Pattern'),
-  TechnicalFieldDefinition(
-    'controllerErrorNumber',
-    'Controller Error Number',
-  ),
+  TechnicalFieldDefinition('controllerErrorNumber', 'Controller Error Number'),
   TechnicalFieldDefinition('motorNoise', 'Motor Noise'),
-  TechnicalFieldDefinition(
-    'motorTemperature',
-    'Motor Temperature',
-    unit: 'C',
-  ),
+  TechnicalFieldDefinition('motorTemperature', 'Motor Temperature', unit: 'C'),
   TechnicalFieldDefinition('batteryVoltage', 'Battery Voltage', unit: 'V'),
   TechnicalFieldDefinition('batteryCurrent', 'Battery Current', unit: 'A'),
   TechnicalFieldDefinition('rmsCurrent', 'RMS Current', unit: 'A'),
@@ -103,11 +96,7 @@ const technicalTimelineEventTypes = <String>[
   'travel_back',
 ];
 
-const technicalAttachmentTypes = <String>[
-  'video',
-  'voice_note',
-  'document',
-];
+const technicalAttachmentTypes = <String>['video', 'voice_note', 'document'];
 
 String technicalValueLabel(String value) {
   final normalized = value.trim().replaceAll('_', ' ');
@@ -121,4 +110,3 @@ String technicalValueLabel(String value) {
       )
       .join(' ');
 }
-

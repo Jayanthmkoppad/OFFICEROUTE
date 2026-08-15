@@ -48,14 +48,13 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final initialLoad = _loadAttendance();
     _attendanceFuture = initialLoad;
     late final Future<void> trackedLoad;
-    trackedLoad = initialLoad.then<void>(
-      (_) {},
-      onError: (Object _, StackTrace _) {},
-    ).whenComplete(() {
-      if (identical(_reloadInFlight, trackedLoad)) {
-        _reloadInFlight = null;
-      }
-    });
+    trackedLoad = initialLoad
+        .then<void>((_) {}, onError: (Object _, StackTrace _) {})
+        .whenComplete(() {
+          if (identical(_reloadInFlight, trackedLoad)) {
+            _reloadInFlight = null;
+          }
+        });
     _reloadInFlight = trackedLoad;
     unawaited(_subscribeToRealtime());
     _clockTimer = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -82,8 +81,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     final cached = _latestData;
     if (personalMonthOnly && cached != null) {
       final updated = cached.copyWith(
-        monthRecords:
-            await AttendanceController.loadAttendanceForMonth(_visibleMonth),
+        monthRecords: await AttendanceController.loadAttendanceForMonth(
+          _visibleMonth,
+        ),
       );
       _latestData = updated;
       return updated;
@@ -94,8 +94,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     );
     final previousAttendanceFuture =
         AttendanceController.loadOperationsAttendanceForDate(
-      _selectedOperationsDate.subtract(const Duration(days: 1)),
-    );
+          _selectedOperationsDate.subtract(const Duration(days: 1)),
+        );
     final operationsMonthFuture = AttendanceController.loadOperationsForMonth(
       _selectedOperationsDate,
     );
@@ -110,15 +110,15 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     );
     final visibleIsOperationsMonth =
         _visibleMonth.year == _selectedOperationsDate.year &&
-            _visibleMonth.month == _selectedOperationsDate.month;
+        _visibleMonth.month == _selectedOperationsDate.month;
 
     final today = selectedIsToday
         ? _latestRecordForUser(operations.attendance, currentUserId)
         : await AttendanceController.loadTodayAttendance();
     final monthRecords = visibleIsOperationsMonth && currentUserId != null
         ? operationsMonth
-            .where((record) => record.userId == currentUserId)
-            .toList(growable: false)
+              .where((record) => record.userId == currentUserId)
+              .toList(growable: false)
         : await AttendanceController.loadAttendanceForMonth(_visibleMonth);
 
     final data = _AttendanceViewData(
@@ -137,10 +137,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     return data;
   }
 
-  Future<void> _refresh({
-    bool force = false,
-    bool personalMonthOnly = false,
-  }) {
+  Future<void> _refresh({bool force = false, bool personalMonthOnly = false}) {
     if (!mounted) return Future<void>.value();
     if (!force && _reloadInFlight != null) {
       return _reloadInFlight!;
@@ -177,9 +174,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     return completion;
   }
 
-  Future<void> _runAction(
-    Future<AttendanceModel?> Function() action,
-  ) async {
+  Future<void> _runAction(Future<AttendanceModel?> Function() action) async {
     if (_isRunningAction) return;
 
     setState(() {
@@ -209,7 +204,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
 
   void _changeMonth(int offset) {
     setState(() {
-      _visibleMonth = DateTime(_visibleMonth.year, _visibleMonth.month + offset);
+      _visibleMonth = DateTime(
+        _visibleMonth.year,
+        _visibleMonth.month + offset,
+      );
     });
     unawaited(_refresh(force: true, personalMonthOnly: true));
   }
@@ -219,8 +217,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     _realtimeDebounce?.cancel();
     _liveLocationDebounce?.cancel();
     final cancellations = <Future<void>>[
-      for (final subscription in _realtimeSubscriptions)
-        subscription.cancel(),
+      for (final subscription in _realtimeSubscriptions) subscription.cancel(),
       if (_liveLocationSubscription != null)
         _liveLocationSubscription!.cancel(),
     ];
@@ -240,31 +237,28 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
     }
 
     final streams = <Stream<void>>[
-      AttendanceController.watchOperationsAttendance(
-        _selectedOperationsDate,
-      ),
+      AttendanceController.watchOperationsAttendance(_selectedOperationsDate),
       AttendanceController.watchOperationsVisits(_selectedOperationsDate),
     ];
     if (isToday) {
       streams.add(AttendanceController.watchActiveVisits());
-      _liveLocationSubscription = AttendanceController
-          .watchOperationsLiveLocations()
-          .listen(
-        (locations) {
-          if (generation != _realtimeGeneration) return;
-          _handleLiveLocations(locations);
-        },
-        onError: (_) {
-          if (generation != _realtimeGeneration ||
-              !mounted ||
-              !_isRealtimeConnected) {
-            return;
-          }
-          setState(() {
-            _isRealtimeConnected = false;
-          });
-        },
-      );
+      _liveLocationSubscription =
+          AttendanceController.watchOperationsLiveLocations().listen(
+            (locations) {
+              if (generation != _realtimeGeneration) return;
+              _handleLiveLocations(locations);
+            },
+            onError: (_) {
+              if (generation != _realtimeGeneration ||
+                  !mounted ||
+                  !_isRealtimeConnected) {
+                return;
+              }
+              setState(() {
+                _isRealtimeConnected = false;
+              });
+            },
+          );
     }
 
     for (final stream in streams) {
@@ -376,9 +370,9 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
   }
 
   void _openReports() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => const ReportsScreen()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const ReportsScreen()));
   }
 
   @override
@@ -394,7 +388,8 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
         future: _attendanceFuture,
         builder: (context, snapshot) {
           final availableData = _latestData ?? snapshot.data;
-          final hasSelectedDateData = availableData != null &&
+          final hasSelectedDateData =
+              availableData != null &&
               DateUtils.isSameDay(
                 availableData.operationsDate,
                 _selectedOperationsDate,
@@ -434,10 +429,12 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       attendance: data.today,
                       isRunningAction: _isRunningAction,
                       onCheckIn: () => _runAction(AttendanceController.checkIn),
-                      onCheckOut: () => _runAction(AttendanceController.checkOut),
+                      onCheckOut: () =>
+                          _runAction(AttendanceController.checkOut),
                       onStartBreak: () =>
                           _runAction(AttendanceController.startBreak),
-                      onEndBreak: () => _runAction(AttendanceController.endBreak),
+                      onEndBreak: () =>
+                          _runAction(AttendanceController.endBreak),
                     ),
                     const SizedBox(height: 16),
                     _LocationAndSyncCard(attendance: data.today),
@@ -453,7 +450,10 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                       onNextMonth: () => _changeMonth(1),
                     ),
                     const SizedBox(height: 16),
-                    _CalendarCard(month: _visibleMonth, records: data.monthRecords),
+                    _CalendarCard(
+                      month: _visibleMonth,
+                      records: data.monthRecords,
+                    ),
                     const SizedBox(height: 16),
                     _HistoryCard(records: data.monthRecords),
                   ],
@@ -476,8 +476,7 @@ class _AttendanceScreenState extends State<AttendanceScreen> {
                             monthAttendanceRecords:
                                 data.operationsMonthAttendance,
                             visits: data.operationsVisits,
-                            liveLocationsByUserId:
-                                data.liveLocationsByUserId,
+                            liveLocationsByUserId: data.liveLocationsByUserId,
                             liveLocationsLoaded: data.liveLocationsLoaded,
                             realtimeConnected: _isRealtimeConnected,
                             refreshing: _isRefreshing,
@@ -546,11 +545,12 @@ class _TodayAttendanceCard extends StatelessWidget {
     final now = DateTime.now();
     final status = _attendanceStatus(attendance);
     final canCheckIn = attendance == null;
-    final canCheckOut = attendance?.checkInTime != null &&
+    final canCheckOut =
+        attendance?.checkInTime != null &&
         attendance?.checkOutTime == null &&
         attendance?.breakStartTime == null;
-    final canStartBreak = attendance?.isCheckedIn == true &&
-        attendance?.breakStartTime == null;
+    final canStartBreak =
+        attendance?.isCheckedIn == true && attendance?.breakStartTime == null;
     final canEndBreak = attendance?.breakStartTime != null;
 
     return PremiumCard(
@@ -716,7 +716,9 @@ class _MonthlySummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final now = DateTime.now();
-    final completed = records.where((record) => record.checkInTime != null).length;
+    final completed = records
+        .where((record) => record.checkInTime != null)
+        .length;
     final totalWork = records.fold<Duration>(
       Duration.zero,
       (sum, record) => sum + record.netWorkingDuration(now),
@@ -842,14 +844,14 @@ class _CalendarCard extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: hasRecord
                       ? (completed
-                          ? AppColors.success.withAlpha(34)
-                          : AppColors.info.withAlpha(34))
+                            ? AppColors.success.withAlpha(34)
+                            : AppColors.info.withAlpha(34))
                       : Colors.white.withAlpha(8),
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
                     color: hasRecord
                         ? (completed ? AppColors.success : AppColors.info)
-                            .withAlpha(76)
+                              .withAlpha(76)
                         : Colors.white.withAlpha(18),
                   ),
                 ),
@@ -897,32 +899,35 @@ class _HistoryCard extends StatelessWidget {
             )
           else
             Column(
-              children: records.take(10).map((record) {
-                final status = _attendanceStatus(record);
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: Row(
-                    children: [
-                      PremiumTinyDot(color: status.color),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          _formatDate(record.date),
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            letterSpacing: 0,
+              children: records
+                  .take(10)
+                  .map((record) {
+                    final status = _attendanceStatus(record);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Row(
+                        children: [
+                          PremiumTinyDot(color: status.color),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _formatDate(record.date),
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                letterSpacing: 0,
+                              ),
+                            ),
                           ),
-                        ),
+                          Text(
+                            _formatDuration(
+                              record.netWorkingDuration(DateTime.now()),
+                            ),
+                            style: AppTextStyles.caption,
+                          ),
+                        ],
                       ),
-                      Text(
-                        _formatDuration(
-                          record.netWorkingDuration(DateTime.now()),
-                        ),
-                        style: AppTextStyles.caption,
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(growable: false),
+                    );
+                  })
+                  .toList(growable: false),
             ),
         ],
       ),
@@ -986,8 +991,9 @@ class _TimelinePoint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment:
-          alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: alignEnd
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
       children: [
         Icon(icon, size: 20),
         const SizedBox(height: 8),
@@ -1182,8 +1188,7 @@ class _AttendanceViewData {
       operationsVisits: operationsVisits,
       liveLocationsByUserId:
           liveLocationsByUserId ?? this.liveLocationsByUserId,
-      liveLocationsLoaded:
-          liveLocationsLoaded ?? this.liveLocationsLoaded,
+      liveLocationsLoaded: liveLocationsLoaded ?? this.liveLocationsLoaded,
     );
   }
 }

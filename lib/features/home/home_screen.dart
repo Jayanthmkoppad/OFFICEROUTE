@@ -6,6 +6,7 @@ import '../../core/models/location_model.dart';
 import '../../core/models/user_model.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../../shared/widgets/magic_apple_navigation_bar.dart';
 import '../attendance/attendance_screen.dart';
 import '../attendance/controllers/attendance_controller.dart';
 import '../attendance/models/attendance_model.dart';
@@ -20,6 +21,7 @@ import '../profile/controllers/profile_controller.dart';
 import '../profile/profile_screen.dart';
 import '../reports/reports_screen.dart';
 import 'widgets/employee_cab_tracking_card.dart';
+import 'widgets/employee_home_flip_clock_section.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -68,9 +70,36 @@ class _HomeScreenState extends State<HomeScreen> {
           child: _buildPage(),
         ),
       ),
-      bottomNavigationBar: _PremiumBottomNavigation(
+      bottomNavigationBar: MagicAppleNavigationBar(
         currentIndex: _currentIndex,
         onTap: _selectTab,
+        items: const [
+          MagicNavigationItem(
+            icon: Icons.home_outlined,
+            activeIcon: Icons.home,
+            label: 'Home',
+          ),
+          MagicNavigationItem(
+            icon: Icons.map_outlined,
+            activeIcon: Icons.map,
+            label: 'Map',
+          ),
+          MagicNavigationItem(
+            icon: Icons.fact_check_outlined,
+            activeIcon: Icons.fact_check,
+            label: 'Attendance',
+          ),
+          MagicNavigationItem(
+            icon: Icons.business_center_outlined,
+            activeIcon: Icons.business_center,
+            label: 'Visits',
+          ),
+          MagicNavigationItem(
+            icon: Icons.person_outline,
+            activeIcon: Icons.person,
+            label: 'Profile',
+          ),
+        ],
       ),
     );
   }
@@ -205,80 +234,6 @@ class _HomeDashboardState extends State<HomeDashboard>
   }
 }
 
-class _PremiumBottomNavigation extends StatelessWidget {
-  final int currentIndex;
-  final ValueChanged<int> onTap;
-
-  const _PremiumBottomNavigation({
-    required this.currentIndex,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      minimum: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: const Color(0xF20A0A0A),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFF1F1F1F)),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: BottomNavigationBar(
-            currentIndex: currentIndex,
-            type: BottomNavigationBarType.fixed,
-            backgroundColor: AppColors.transparent,
-            elevation: 0,
-            selectedItemColor: AppColors.textPrimary,
-            unselectedItemColor: AppColors.textDisabled,
-            selectedLabelStyle: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0,
-            ),
-            unselectedLabelStyle: const TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w500,
-              letterSpacing: 0,
-            ),
-            onTap: onTap,
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.home_outlined),
-                activeIcon: Icon(Icons.home),
-                label: 'Home',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.map_outlined),
-                activeIcon: Icon(Icons.map),
-                label: 'Map',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.fact_check_outlined),
-                activeIcon: Icon(Icons.fact_check),
-                label: 'Attendance',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.business_center_outlined),
-                activeIcon: Icon(Icons.business_center),
-                label: 'Visits',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.person_outline),
-                activeIcon: Icon(Icons.person),
-                label: 'Profile',
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _DashboardContent extends StatelessWidget {
   final _DashboardData data;
   final DateTime now;
@@ -336,6 +291,8 @@ class _DashboardContent extends StatelessWidget {
                       );
                     },
                   ),
+                  const SizedBox(height: 12),
+                  const EmployeeHomeFlipClockSection(),
                   const SizedBox(height: 12),
                   _TodayOperationsCard(
                     status: dutyStatus,

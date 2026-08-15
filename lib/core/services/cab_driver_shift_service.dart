@@ -13,8 +13,12 @@ class CabDriverShiftService {
 
   static Future<String> createShift(CabDriverShiftModel shift) async {
     try {
-      final docRef = await _collection.add(shift.toMap());
-      return docRef.id;
+      if (shift.driverId.trim().isEmpty || shift.shiftDate.trim().isEmpty) {
+        throw StateError('Driver and operational date are required.');
+      }
+      final id = '${shift.shiftDate}_${shift.driverId}';
+      await _collection.doc(id).set(shift.toMap());
+      return id;
     } catch (error, stackTrace) {
       _printFirestoreException(
         error: error,

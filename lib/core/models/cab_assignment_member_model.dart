@@ -1,4 +1,4 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+﻿import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Optimized daily lookup entry for a user assigned to a cab.
 ///
@@ -21,6 +21,15 @@ class CabAssignmentMemberModel {
   /// Member role for the assignment, usually `driver` or `employee`.
   final String role;
 
+  /// Branch scope copied from the Employee profile for secure Driver queries.
+  final String branch;
+
+  /// Service-centre scope copied from the Employee profile.
+  final String serviceCentre;
+
+  /// Start of the operational day represented by [dateKey].
+  final DateTime? operationalDay;
+
   /// Reference to `users/{uid}` for the assigned cab driver.
   final String driverId;
 
@@ -29,6 +38,27 @@ class CabAssignmentMemberModel {
 
   /// Member status, for example `assigned`, `ready`, or `boarded`.
   final String status;
+
+  /// Invitation lifecycle, separate from trip/rider progress.
+  final String invitationStatus;
+
+  /// Active Driver shift that created the invitation.
+  final String shiftId;
+
+  /// Optional Employee-provided decline reason.
+  final String declineReason;
+
+  /// Time the Driver sent the invitation.
+  final DateTime? invitedAt;
+
+  /// Time the Employee accepted or declined.
+  final DateTime? respondedAt;
+
+  /// Immutable office destination snapshot shown with the invitation.
+  final String officeName;
+  final String officeAddress;
+  final double? officeLatitude;
+  final double? officeLongitude;
 
   /// Snapshot of assigned pickup location name.
   final String pickupName;
@@ -55,9 +85,21 @@ class CabAssignmentMemberModel {
     this.dateKey = '',
     this.userId = '',
     this.role = 'employee',
+    this.branch = '',
+    this.serviceCentre = '',
+    this.operationalDay,
     this.driverId = '',
     this.vehicleId = '',
     this.status = 'assigned',
+    this.invitationStatus = 'not_invited',
+    this.shiftId = '',
+    this.declineReason = '',
+    this.invitedAt,
+    this.respondedAt,
+    this.officeName = '',
+    this.officeAddress = '',
+    this.officeLatitude,
+    this.officeLongitude,
     this.pickupName = '',
     this.pickupAddress = '',
     this.pickupLatitude,
@@ -77,9 +119,21 @@ class CabAssignmentMemberModel {
       dateKey: (map['dateKey'] ?? '').toString(),
       userId: (map['userId'] ?? '').toString(),
       role: (map['role'] ?? 'employee').toString(),
+      branch: (map['branch'] ?? '').toString(),
+      serviceCentre: (map['serviceCentre'] ?? '').toString(),
+      operationalDay: _parseDateTime(map['operationalDay']),
       driverId: (map['driverId'] ?? '').toString(),
       vehicleId: (map['vehicleId'] ?? '').toString(),
       status: (map['status'] ?? 'assigned').toString(),
+      invitationStatus: (map['invitationStatus'] ?? 'not_invited').toString(),
+      shiftId: (map['shiftId'] ?? '').toString(),
+      declineReason: (map['declineReason'] ?? '').toString(),
+      invitedAt: _parseDateTime(map['invitedAt']),
+      respondedAt: _parseDateTime(map['respondedAt']),
+      officeName: (map['officeName'] ?? '').toString(),
+      officeAddress: (map['officeAddress'] ?? '').toString(),
+      officeLatitude: _parseNullableDouble(map['officeLatitude']),
+      officeLongitude: _parseNullableDouble(map['officeLongitude']),
       pickupName: (map['pickupName'] ?? '').toString(),
       pickupAddress: (map['pickupAddress'] ?? '').toString(),
       pickupLatitude: _parseNullableDouble(map['pickupLatitude']),
@@ -96,13 +150,40 @@ class CabAssignmentMemberModel {
       'dateKey': dateKey,
       'userId': userId,
       'role': role,
+      'branch': branch,
+      'serviceCentre': serviceCentre,
+      'operationalDay': operationalDay == null
+          ? null
+          : Timestamp.fromDate(operationalDay!),
       'driverId': driverId,
       'vehicleId': vehicleId,
       'status': status,
+      'invitationStatus': invitationStatus,
+      'shiftId': shiftId,
+      'declineReason': declineReason,
+      'invitedAt': invitedAt == null ? null : Timestamp.fromDate(invitedAt!),
+      'respondedAt': respondedAt == null
+          ? null
+          : Timestamp.fromDate(respondedAt!),
+      'officeName': officeName,
+      'officeAddress': officeAddress,
+      'officeLatitude': officeLatitude,
+      'officeLongitude': officeLongitude,
       'pickupName': pickupName,
       'pickupAddress': pickupAddress,
       'pickupLatitude': pickupLatitude,
       'pickupLongitude': pickupLongitude,
+      'pickupValid':
+          pickupName.trim().isNotEmpty &&
+          pickupAddress.trim().isNotEmpty &&
+          pickupLatitude != null &&
+          pickupLongitude != null &&
+          pickupLatitude!.isFinite &&
+          pickupLongitude!.isFinite &&
+          pickupLatitude! >= -90 &&
+          pickupLatitude! <= 90 &&
+          pickupLongitude! >= -180 &&
+          pickupLongitude! <= 180,
       'createdAt': createdAt == null ? null : Timestamp.fromDate(createdAt!),
       'updatedAt': updatedAt == null ? null : Timestamp.fromDate(updatedAt!),
     };
@@ -115,9 +196,21 @@ class CabAssignmentMemberModel {
     String? dateKey,
     String? userId,
     String? role,
+    String? branch,
+    String? serviceCentre,
+    DateTime? operationalDay,
     String? driverId,
     String? vehicleId,
     String? status,
+    String? invitationStatus,
+    String? shiftId,
+    String? declineReason,
+    DateTime? invitedAt,
+    DateTime? respondedAt,
+    String? officeName,
+    String? officeAddress,
+    double? officeLatitude,
+    double? officeLongitude,
     String? pickupName,
     String? pickupAddress,
     double? pickupLatitude,
@@ -131,9 +224,21 @@ class CabAssignmentMemberModel {
       dateKey: dateKey ?? this.dateKey,
       userId: userId ?? this.userId,
       role: role ?? this.role,
+      branch: branch ?? this.branch,
+      serviceCentre: serviceCentre ?? this.serviceCentre,
+      operationalDay: operationalDay ?? this.operationalDay,
       driverId: driverId ?? this.driverId,
       vehicleId: vehicleId ?? this.vehicleId,
       status: status ?? this.status,
+      invitationStatus: invitationStatus ?? this.invitationStatus,
+      shiftId: shiftId ?? this.shiftId,
+      declineReason: declineReason ?? this.declineReason,
+      invitedAt: invitedAt ?? this.invitedAt,
+      respondedAt: respondedAt ?? this.respondedAt,
+      officeName: officeName ?? this.officeName,
+      officeAddress: officeAddress ?? this.officeAddress,
+      officeLatitude: officeLatitude ?? this.officeLatitude,
+      officeLongitude: officeLongitude ?? this.officeLongitude,
       pickupName: pickupName ?? this.pickupName,
       pickupAddress: pickupAddress ?? this.pickupAddress,
       pickupLatitude: pickupLatitude ?? this.pickupLatitude,

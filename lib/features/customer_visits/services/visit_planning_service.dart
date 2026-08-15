@@ -207,13 +207,15 @@ class VisitPlanningService {
     final longitudeDelta = _radians(endLongitude - startLongitude);
     final startLatitudeRadians = _radians(startLatitude);
     final endLatitudeRadians = _radians(endLatitude);
-    final haversine = math.sin(latitudeDelta / 2) *
-            math.sin(latitudeDelta / 2) +
+    final haversine =
+        math.sin(latitudeDelta / 2) * math.sin(latitudeDelta / 2) +
         math.cos(startLatitudeRadians) *
             math.cos(endLatitudeRadians) *
             math.sin(longitudeDelta / 2) *
             math.sin(longitudeDelta / 2);
-    return earthRadiusKm * 2 * math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine));
+    return earthRadiusKm *
+        2 *
+        math.atan2(math.sqrt(haversine), math.sqrt(1 - haversine));
   }
 
   /// Ranks employees without claiming unavailable centre membership,
@@ -258,16 +260,18 @@ class VisitPlanningService {
       final attendanceRecord = attendanceByUser[employee.uid];
       final onDuty = attendanceRecord?.isCheckedIn == true;
       final onBreak = attendanceRecord?.isOnBreak == true;
-      final currentShift = attendanceRecord?.netWorkingDuration(now) ?? Duration.zero;
+      final currentShift =
+          attendanceRecord?.netWorkingDuration(now) ?? Duration.zero;
       final overtime = currentShift > const Duration(hours: 8);
 
       final location = liveLocationsByUserId[employee.uid];
-      final gpsFresh = location != null &&
-          now.difference(location.updatedAt).abs() <= const Duration(minutes: 5);
+      final gpsFresh =
+          location != null &&
+          now.difference(location.updatedAt).abs() <=
+              const Duration(minutes: 5);
       final travelling = gpsFresh && location.speed > 1.4;
-      final directDistance = gpsFresh &&
-              dealerLatitude != null &&
-              dealerLongitude != null
+      final directDistance =
+          gpsFresh && dealerLatitude != null && dealerLongitude != null
           ? directDistanceKm(
               location.latitude,
               location.longitude,
@@ -342,9 +346,9 @@ class VisitPlanningService {
     }
 
     recommendations.sort((left, right) {
-      final availability = _recommendationOrder(left.recommendation).compareTo(
-        _recommendationOrder(right.recommendation),
-      );
+      final availability = _recommendationOrder(
+        left.recommendation,
+      ).compareTo(_recommendationOrder(right.recommendation));
       if (availability != 0) return availability;
       return right.score.compareTo(left.score);
     });
@@ -355,7 +359,9 @@ class VisitPlanningService {
     required List<CustomerVisitModel> visits,
     required Set<String> employeeIds,
   }) {
-    final planningVisits = visits.where(_hasPlanningData).toList(growable: false);
+    final planningVisits = visits
+        .where(_hasPlanningData)
+        .toList(growable: false);
     final centreUsage = <String, int>{};
     final roadDistances = <double>[];
     final etaMinutes = <int>[];
@@ -373,7 +379,9 @@ class VisitPlanningService {
         final directDistance = visit.serviceCentreDistanceKm;
         if (directDistance != null && directDistance > 0) {
           efficiencySamples.add(
-            ((directDistance / roadDistance) * 100).clamp(0.0, 100.0).toDouble(),
+            ((directDistance / roadDistance) * 100)
+                .clamp(0.0, 100.0)
+                .toDouble(),
           );
         }
       }
@@ -395,10 +403,14 @@ class VisitPlanningService {
       centreUsage: centreUsage,
       averageRoadDistanceKm: _averageDouble(roadDistances),
       longestRoadDistanceKm: roadDistances.isEmpty ? null : roadDistances.last,
-      shortestRoadDistanceKm: roadDistances.isEmpty ? null : roadDistances.first,
+      shortestRoadDistanceKm: roadDistances.isEmpty
+          ? null
+          : roadDistances.first,
       averageEta: etaMinutes.isEmpty
           ? null
-          : Duration(minutes: etaMinutes.reduce((a, b) => a + b) ~/ etaMinutes.length),
+          : Duration(
+              minutes: etaMinutes.reduce((a, b) => a + b) ~/ etaMinutes.length,
+            ),
       averageAssignmentDelay: _averageDuration(assignmentDelays),
       travelEfficiencyPercent: _averageDouble(efficiencySamples),
     );

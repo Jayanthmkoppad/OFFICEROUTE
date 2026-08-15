@@ -89,11 +89,17 @@ void main() {
         'officeAddress': '',
         'officeLatitude': null,
         'officeLongitude': null,
+        'branch': '',
+        'serviceCentre': '',
         'status': 'active',
         'assignedBy': '',
         'assignedAt': null,
         'updatedAt': null,
         'remarks': '',
+        'cancellationReason': '',
+        'cancellationExplanation': '',
+        'cancelledBy': '',
+        'cancelledAt': null,
       });
     });
   });
@@ -187,10 +193,7 @@ void main() {
         updatedAt: now,
       );
 
-      final restored = CabTripRiderModel.fromMap(
-        rider.toMap(),
-        id: rider.id,
-      );
+      final restored = CabTripRiderModel.fromMap(rider.toMap(), id: rider.id);
 
       expect(restored.id, rider.id);
       expect(restored.tripId, rider.tripId);
@@ -221,10 +224,7 @@ void main() {
         metadata: const <String, dynamic>{'source': 'test'},
       );
 
-      final restored = CabTripEventModel.fromMap(
-        event.toMap(),
-        id: event.id,
-      );
+      final restored = CabTripEventModel.fromMap(event.toMap(), id: event.id);
 
       expect(restored.id, event.id);
       expect(restored.tripId, event.tripId);

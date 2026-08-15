@@ -13,6 +13,7 @@ import '../cab_driver/cab_driver_app.dart';
 import '../employee/employee_app.dart';
 import '../service_engineer/service_engineer_app.dart';
 import 'controllers/session_approval_controller.dart';
+import 'services/auth_service.dart';
 import 'services/session_device_service.dart';
 
 class SessionAccessGate extends StatefulWidget {
@@ -332,7 +333,7 @@ class _UnsupportedRoleView extends StatelessWidget {
               const SizedBox(height: 24),
               OutlinedButton.icon(
                 onPressed: () async {
-                  await FirebaseAuth.instance.signOut();
+                  await AuthService.signOut();
                 },
                 icon: const Icon(Icons.logout),
                 label: const Text('Sign Out'),

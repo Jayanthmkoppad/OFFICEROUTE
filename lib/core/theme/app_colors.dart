@@ -68,5 +68,6 @@ class AppColors {
   // Misc
   // -----------------------------------------------------------------
 
+  static const Color overlay = Color(0x99000000);
   static const Color transparent = Colors.transparent;
 }

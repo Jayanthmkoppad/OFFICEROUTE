@@ -7,7 +7,8 @@ import '../models/manager_employee_summary_model.dart';
 class ManagerService {
   ManagerService._();
 
-  static Future<List<ManagerEmployeeSummaryModel>> loadEmployeeSummaries() async {
+  static Future<List<ManagerEmployeeSummaryModel>>
+  loadEmployeeSummaries() async {
     final employeesFuture = EmployeeService.fetchAllEmployees();
     final attendanceFuture = AttendanceService.fetchAllAttendance();
     final visitsFuture = CustomerVisitService.fetchAllVisits();
@@ -17,22 +18,24 @@ class ManagerService {
     final visits = await visitsFuture;
     final today = DateTime.now();
 
-    return employees.map((employee) {
-      final todayAttendance = _todayAttendanceFor(
-        attendance: attendance,
-        userId: employee.uid,
-        today: today,
-      );
-      final employeeVisits = visits
-          .where((visit) => visit.userId == employee.uid)
-          .toList(growable: false);
+    return employees
+        .map((employee) {
+          final todayAttendance = _todayAttendanceFor(
+            attendance: attendance,
+            userId: employee.uid,
+            today: today,
+          );
+          final employeeVisits = visits
+              .where((visit) => visit.userId == employee.uid)
+              .toList(growable: false);
 
-      return ManagerEmployeeSummaryModel(
-        employee: employee,
-        todayAttendance: todayAttendance,
-        visits: employeeVisits,
-      );
-    }).toList(growable: false);
+          return ManagerEmployeeSummaryModel(
+            employee: employee,
+            todayAttendance: todayAttendance,
+            visits: employeeVisits,
+          );
+        })
+        .toList(growable: false);
   }
 
   static AttendanceModel? _todayAttendanceFor({

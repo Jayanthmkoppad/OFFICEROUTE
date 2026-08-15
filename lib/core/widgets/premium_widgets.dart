@@ -98,11 +98,7 @@ class PremiumIconChip extends StatelessWidget {
   final IconData icon;
   final Color? color;
 
-  const PremiumIconChip({
-    super.key,
-    required this.icon,
-    this.color,
-  });
+  const PremiumIconChip({super.key, required this.icon, this.color});
 
   @override
   Widget build(BuildContext context) {

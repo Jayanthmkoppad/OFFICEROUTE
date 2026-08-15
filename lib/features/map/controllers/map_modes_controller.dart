@@ -83,42 +83,56 @@ class MapModesController {
           dateKey: dateKey,
         );
 
-    final managerAssignments =
-        await CabManagementController.loadAssignmentsForDate(dateKey: dateKey);
-    final managerTrips = await CabManagementController.loadTripsForDate(
-      dateKey: dateKey,
-    );
-    final managerMembers =
-        await CabManagementController.loadAssignmentMembersForDate(
-          dateKey: dateKey,
-        );
+    final canManage = _canManageCab(currentUser.role);
+    final managerAssignments = canManage
+        ? await CabManagementController.loadAssignmentsForDate(dateKey: dateKey)
+        : const <CabAssignmentModel>[];
+    final managerTrips = canManage
+        ? await CabManagementController.loadTripsForDate(dateKey: dateKey)
+        : const <CabTripModel>[];
+    final managerMembers = canManage
+        ? await CabManagementController.loadAssignmentMembersForDate(
+            dateKey: dateKey,
+          )
+        : const <CabAssignmentMemberModel>[];
 
     final assignment =
         driverAssignment ??
-        (member == null
-            ? (managerAssignments.isEmpty ? null : managerAssignments.first)
-            : await CabManagementController.loadAssignment(
-                member.assignmentId,
-              ));
+        (member != null
+            ? await CabManagementController.loadAssignment(member.assignmentId)
+            : canManage && managerAssignments.isNotEmpty
+            ? managerAssignments.first
+            : null);
+    final coherentAssignment =
+        assignment != null && assignment.dateKey == dateKey ? assignment : null;
 
-    final vehicle = assignment == null
+    final vehicle = coherentAssignment == null
         ? null
-        : await CabManagementController.getVehicle(assignment.vehicleId);
-    final members = assignment == null
+        : await CabManagementController.getVehicle(
+            coherentAssignment.vehicleId,
+          );
+    final members = coherentAssignment == null
         ? const <CabAssignmentMemberModel>[]
         : await CabManagementController.loadAssignmentMembers(
-            assignmentId: assignment.id,
-            dateKey: assignment.dateKey,
+            assignmentId: coherentAssignment.id,
+            dateKey: coherentAssignment.dateKey,
           );
-    final activeTrip = assignment == null
+    final loadedTrip = coherentAssignment == null
         ? null
         : await CabManagementController.loadActiveTripForAssignment(
-            assignmentId: assignment.id,
+            assignmentId: coherentAssignment.id,
           );
+    final activeTrip =
+        loadedTrip != null &&
+            loadedTrip.dateKey == dateKey &&
+            loadedTrip.assignmentId == coherentAssignment?.id &&
+            loadedTrip.driverId == coherentAssignment?.driverId
+        ? loadedTrip
+        : null;
 
     final userIds = <String>{
       currentUser.uid,
-      if (assignment != null) assignment.driverId,
+      if (coherentAssignment != null) coherentAssignment.driverId,
       for (final item in members) item.userId,
       for (final item in managerMembers) item.userId,
       for (final item in managerAssignments) item.driverId,
@@ -129,12 +143,14 @@ class MapModesController {
     };
 
     final locationIds = <String>{
-      if (assignment != null) assignment.driverId,
-      for (final item in managerAssignments) item.driverId,
+      if (coherentAssignment != null) coherentAssignment.driverId,
+      if (canManage)
+        for (final item in managerAssignments) item.driverId,
       for (final item in members)
         if (item.status == 'ready') item.userId,
-      for (final item in managerMembers)
-        if (item.status == 'ready') item.userId,
+      if (canManage)
+        for (final item in managerMembers)
+          if (item.status == 'ready') item.userId,
     }.where((item) => item.isNotEmpty).toList(growable: false);
     final liveLocations = <String, LiveLocationModel>{};
     final locations = await Future.wait(
@@ -142,7 +158,13 @@ class MapModesController {
     );
     for (var index = 0; index < locationIds.length; index++) {
       final location = locations[index];
-      if (location != null) {
+      if (location != null &&
+          locationMatchesOperation(
+            location,
+            focusedAssignment: coherentAssignment,
+            managerAssignments: managerAssignments,
+            canManage: canManage,
+          )) {
         liveLocations[locationIds[index]] = location;
       }
     }
@@ -151,7 +173,7 @@ class MapModesController {
       currentUser: currentUser,
       dateKey: dateKey,
       currentMember: member,
-      assignment: assignment,
+      assignment: coherentAssignment,
       vehicle: vehicle,
       members: members,
       usersById: userMap,
@@ -212,7 +234,36 @@ class MapModesController {
   }
 
   static bool _canManageCab(String role) {
-    return role == 'manager' || role == 'admin' || role == 'ceo';
+    final normalized = role.trim().toLowerCase();
+    return const {
+      'manager',
+      'admin',
+      'administrator',
+      'application_owner',
+      'owner',
+      'ceo',
+    }.contains(normalized);
+  }
+
+  static bool locationMatchesOperation(
+    LiveLocationModel location, {
+    required CabAssignmentModel? focusedAssignment,
+    required List<CabAssignmentModel> managerAssignments,
+    required bool canManage,
+  }) {
+    final assignmentId = location.assignmentId?.trim() ?? '';
+    if (assignmentId.isEmpty) return false;
+    if (focusedAssignment?.id == assignmentId) {
+      return location.userId == focusedAssignment!.driverId ||
+          focusedAssignment.employeeIds.contains(location.userId);
+    }
+    if (!canManage) return false;
+    return managerAssignments.any(
+      (assignment) =>
+          assignment.id == assignmentId &&
+          (location.userId == assignment.driverId ||
+              assignment.employeeIds.contains(location.userId)),
+    );
   }
 }
 
@@ -274,7 +325,10 @@ class CabMapContext {
   bool get isDriver => assignment?.driverId == currentUser.uid;
 
   /// True when current user is an assigned employee.
-  bool get isEmployee => currentMember?.role == 'employee';
+  bool get isEmployee =>
+      currentMember != null &&
+      currentMember!.userId == currentUser.uid &&
+      currentMember!.role != 'driver';
 
   /// True when current user can manage cab assignments.
   bool get canManage {
@@ -294,33 +348,29 @@ class CabMapContext {
 
   /// Employees currently ready for pickup.
   List<CabAssignmentMemberModel> get readyMembers => members
-      .where((member) => member.role == 'employee' && member.status == 'ready')
+      .where((member) => member.role != 'driver' && member.status == 'ready')
       .toList(growable: false);
 
   /// Employees marked picked up.
   List<CabAssignmentMemberModel> get pickedUpMembers => members
       .where(
-        (member) => member.role == 'employee' && member.status == 'picked_up',
+        (member) => member.role != 'driver' && member.status == 'picked_up',
       )
       .toList(growable: false);
 
   /// Employees marked boarded.
   List<CabAssignmentMemberModel> get boardedMembers => members
-      .where(
-        (member) => member.role == 'employee' && member.status == 'boarded',
-      )
+      .where((member) => member.role != 'driver' && member.status == 'boarded')
       .toList(growable: false);
 
   /// Employees marked no-show.
   List<CabAssignmentMemberModel> get noShowMembers => members
-      .where(
-        (member) => member.role == 'employee' && member.status == 'no_show',
-      )
+      .where((member) => member.role != 'driver' && member.status == 'no_show')
       .toList(growable: false);
 
   /// Ready employees across all assignments visible in Admin mode.
   List<CabAssignmentMemberModel> get managerReadyMembers => managerMembers
-      .where((member) => member.role == 'employee' && member.status == 'ready')
+      .where((member) => member.role != 'driver' && member.status == 'ready')
       .toList(growable: false);
 }
 

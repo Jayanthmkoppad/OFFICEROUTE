@@ -5,10 +5,7 @@ import '../../../core/theme/app_colors.dart';
 class GoogleSignInButton extends StatelessWidget {
   final VoidCallback onPressed;
 
-  const GoogleSignInButton({
-    super.key,
-    required this.onPressed,
-  });
+  const GoogleSignInButton({super.key, required this.onPressed});
 
   @override
   Widget build(BuildContext context) {
@@ -31,10 +28,7 @@ class GoogleSignInButton extends StatelessWidget {
           ),
         ),
         style: OutlinedButton.styleFrom(
-          side: const BorderSide(
-            color: AppColors.divider,
-            width: 1,
-          ),
+          side: const BorderSide(color: AppColors.divider, width: 1),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(18),
           ),

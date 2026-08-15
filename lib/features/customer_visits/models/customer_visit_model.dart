@@ -198,17 +198,11 @@ class CustomerVisitModel {
       dealerLongitude: _parseDouble(map['dealerLongitude']),
       priority: (map['priority'] ?? '').toString(),
       preferredVisitDate: _parseDateTime(map['preferredVisitDate']),
-      expectedDurationMinutes: _parseIntOrNull(
-        map['expectedDurationMinutes'],
-      ),
+      expectedDurationMinutes: _parseIntOrNull(map['expectedDurationMinutes']),
       serviceCentreName: (map['serviceCentreName'] ?? '').toString(),
-      serviceCentreDistanceKm: _parseDouble(
-        map['serviceCentreDistanceKm'],
-      ),
+      serviceCentreDistanceKm: _parseDouble(map['serviceCentreDistanceKm']),
       roadDistanceKm: _parseDouble(map['roadDistanceKm']),
-      estimatedTravelMinutes: _parseIntOrNull(
-        map['estimatedTravelMinutes'],
-      ),
+      estimatedTravelMinutes: _parseIntOrNull(map['estimatedTravelMinutes']),
       travelCostEstimate: _parseDouble(map['travelCostEstimate']),
       assignedAt: _parseDateTime(map['assignedAt']),
       motorModel: (map['motorModel'] ?? '').toString(),
@@ -229,7 +223,8 @@ class CustomerVisitModel {
       vehicleOdometer: _parseDouble(map['vehicleOdometer']),
       hoursRun: _parseDouble(map['hoursRun']),
       lastServiceDate: _parseDateTime(map['lastServiceDate']),
-      issueCategories: storedIssueCategories.isEmpty &&
+      issueCategories:
+          storedIssueCategories.isEmpty &&
               primaryIssueCategory.trim().isNotEmpty
           ? <String>[primaryIssueCategory]
           : storedIssueCategories,
@@ -239,16 +234,16 @@ class CustomerVisitModel {
       preventiveAction: (map['preventiveAction'] ?? '').toString(),
       engineerRecommendation: (map['engineerRecommendation'] ?? '').toString(),
       resolutionStatus: (map['resolutionStatus'] ?? '').toString(),
-      serviceChecklist: _parseMapList(map['serviceChecklist'])
-          .map(TechnicalChecklistItem.fromMap)
-          .toList(growable: false),
-      technicalTimeline: _parseMapList(map['technicalTimeline'])
-          .map(VisitTimelineEvent.fromMap)
-          .toList(growable: false),
+      serviceChecklist: _parseMapList(
+        map['serviceChecklist'],
+      ).map(TechnicalChecklistItem.fromMap).toList(growable: false),
+      technicalTimeline: _parseMapList(
+        map['technicalTimeline'],
+      ).map(VisitTimelineEvent.fromMap).toList(growable: false),
       photoTimelineEvents: _parseStringList(map['photoTimelineEvents']),
-      technicalAttachments: _parseMapList(map['technicalAttachments'])
-          .map(TechnicalAttachment.fromMap)
-          .toList(growable: false),
+      technicalAttachments: _parseMapList(
+        map['technicalAttachments'],
+      ).map(TechnicalAttachment.fromMap).toList(growable: false),
     );
   }
 
@@ -330,7 +325,8 @@ class CustomerVisitModel {
       'lastServiceDate': lastServiceDate == null
           ? null
           : Timestamp.fromDate(lastServiceDate!),
-      'issueCategories': issueCategories.isEmpty && issueCategory.trim().isNotEmpty
+      'issueCategories':
+          issueCategories.isEmpty && issueCategory.trim().isNotEmpty
           ? <String>[issueCategory]
           : issueCategories,
       'diagnosticReadings': diagnosticReadings,
@@ -511,8 +507,7 @@ class CustomerVisitModel {
       serviceChecklist: serviceChecklist ?? this.serviceChecklist,
       technicalTimeline: technicalTimeline ?? this.technicalTimeline,
       photoTimelineEvents: photoTimelineEvents ?? this.photoTimelineEvents,
-      technicalAttachments:
-          technicalAttachments ?? this.technicalAttachments,
+      technicalAttachments: technicalAttachments ?? this.technicalAttachments,
     );
   }
 
@@ -525,8 +520,7 @@ class CustomerVisitModel {
     return endAt.difference(startedAt);
   }
 
-  bool get hasGpsCheckIn =>
-      checkInLatitude != null && checkInLongitude != null;
+  bool get hasGpsCheckIn => checkInLatitude != null && checkInLongitude != null;
 
   bool get hasGpsCheckOut =>
       checkOutLatitude != null && checkOutLongitude != null;

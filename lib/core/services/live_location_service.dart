@@ -11,6 +11,7 @@ import 'location_history_service.dart';
 import 'location_permission_service.dart';
 import 'location_session_service.dart';
 import 'location_tracking_policy.dart';
+import 'shared_map_presence_service.dart';
 
 class LiveLocationService {
   LiveLocationService._();
@@ -21,6 +22,7 @@ class LiveLocationService {
   static Stream<LiveLocationModel> foregroundLocationStream({
     required String userId,
     required String sessionId,
+    String? assignmentId,
     required String trackingReason,
     LocationAccuracy accuracy = LocationAccuracy.best,
     int distanceFilterMeters = 20,
@@ -34,6 +36,7 @@ class LiveLocationService {
       (position) => LiveLocationModel.fromPosition(
         userId: userId,
         sessionId: sessionId,
+        assignmentId: assignmentId,
         trackingReason: trackingReason,
         status: LocationTrackingPolicy.statusActive,
         position: position,
@@ -42,8 +45,7 @@ class LiveLocationService {
     );
   }
 
-  static Future<StreamSubscription<LiveLocationModel>>
-      startForegroundTracking({
+  static Future<StreamSubscription<LiveLocationModel>> startForegroundTracking({
     required LocationSessionModel session,
     void Function(LiveLocationModel location)? onLocation,
     void Function(Object error, StackTrace stackTrace)? onError,
@@ -54,12 +56,15 @@ class LiveLocationService {
     LiveLocationModel? lastHistoryLocation;
     var historySequence = 0;
 
+    final assignmentId = session.assignmentId;
+
     return foregroundLocationStream(
       userId: session.userId,
       sessionId: session.id,
+      assignmentId: assignmentId,
       trackingReason: session.trackingReason,
-      distanceFilterMeters:
-          LocationTrackingPolicy.minimumLiveDistanceMeters.round(),
+      distanceFilterMeters: LocationTrackingPolicy.minimumLiveDistanceMeters
+          .round(),
     ).listen(
       (location) {
         unawaited(
@@ -93,6 +98,11 @@ class LiveLocationService {
   static Future<void> writeLiveLocation(LiveLocationModel location) async {
     try {
       await _collection.doc(location.userId).set(location.toMap());
+      try {
+        await SharedMapPresenceService.publish(location);
+      } catch (error) {
+        debugPrint('Shared map presence publish skipped: $error');
+      }
     } catch (error, stackTrace) {
       _printLiveLocationException(
         error: error,
@@ -130,10 +140,13 @@ class LiveLocationService {
   /// collection. It does not start tracking or write location data.
   static Stream<List<LiveLocationModel>> watchLiveLocations() {
     return _collection
-        .where('status', whereIn: const [
-          LocationTrackingPolicy.statusActive,
-          LocationTrackingPolicy.statusPaused,
-        ])
+        .where(
+          'status',
+          whereIn: const [
+            LocationTrackingPolicy.statusActive,
+            LocationTrackingPolicy.statusPaused,
+          ],
+        )
         .snapshots()
         .map(
           (snapshot) => snapshot.docs
@@ -150,11 +163,13 @@ class LiveLocationService {
   static Future<void> markPaused({
     required String userId,
     required String sessionId,
+    String? assignmentId,
     required String trackingReason,
   }) async {
     await _updateTrackingStatus(
       userId: userId,
       sessionId: sessionId,
+      assignmentId: assignmentId,
       trackingReason: trackingReason,
       status: LocationTrackingPolicy.statusPaused,
     );
@@ -163,14 +178,21 @@ class LiveLocationService {
   static Future<void> markOffline({
     required String userId,
     required String sessionId,
+    String? assignmentId,
     required String trackingReason,
   }) async {
     await _updateTrackingStatus(
       userId: userId,
       sessionId: sessionId,
+      assignmentId: assignmentId,
       trackingReason: trackingReason,
       status: LocationTrackingPolicy.statusOffline,
     );
+    try {
+      await SharedMapPresenceService.markOffline(userId);
+    } catch (error) {
+      debugPrint('Shared map presence offline sync skipped: $error');
+    }
   }
 
   static Future<void> _processForegroundLocation({
@@ -217,17 +239,22 @@ class LiveLocationService {
   static Future<void> _updateTrackingStatus({
     required String userId,
     required String sessionId,
+    String? assignmentId,
     required String trackingReason,
     required String status,
   }) async {
     try {
-      await _collection.doc(userId).set({
+      final payload = <String, dynamic>{
         'userId': userId,
         'sessionId': sessionId,
         'trackingReason': trackingReason,
         'status': status,
         'updatedAt': Timestamp.fromDate(DateTime.now()),
-      }, SetOptions(merge: true));
+      };
+      if (assignmentId != null && assignmentId.isNotEmpty) {
+        payload['assignmentId'] = assignmentId;
+      }
+      await _collection.doc(userId).set(payload, SetOptions(merge: true));
     } catch (error, stackTrace) {
       _printLiveLocationException(
         error: error,

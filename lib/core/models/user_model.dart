@@ -42,6 +42,10 @@ class UserModel {
   final String locationAccuracy;
   final bool biometricEnabled;
   final String serviceCentre;
+  final String officeName;
+  final String officeAddress;
+  final double? officeLatitude;
+  final double? officeLongitude;
   final String vehicleNumber;
   final String reportingRegion;
   final String remarks;
@@ -63,6 +67,12 @@ class UserModel {
   final String rejectionReason;
   final String administratorRemarks;
   final String licenseNumber;
+  final String homeAddress;
+  final double? homeLatitude;
+  final double? homeLongitude;
+  final String preferredPickupAddress;
+  final double? preferredPickupLatitude;
+  final double? preferredPickupLongitude;
   final String pendingDeviceId;
   final String pendingDeviceModel;
   final String pendingDevicePlatform;
@@ -92,6 +102,10 @@ class UserModel {
     this.locationAccuracy = 'high',
     this.biometricEnabled = false,
     this.serviceCentre = '',
+    this.officeName = '',
+    this.officeAddress = '',
+    this.officeLatitude,
+    this.officeLongitude,
     this.vehicleNumber = '',
     this.reportingRegion = '',
     this.remarks = '',
@@ -113,6 +127,12 @@ class UserModel {
     this.rejectionReason = '',
     this.administratorRemarks = '',
     this.licenseNumber = '',
+    this.homeAddress = '',
+    this.homeLatitude,
+    this.homeLongitude,
+    this.preferredPickupAddress = '',
+    this.preferredPickupLatitude,
+    this.preferredPickupLongitude,
     this.pendingDeviceId = '',
     this.pendingDeviceModel = '',
     this.pendingDevicePlatform = '',
@@ -154,6 +174,10 @@ class UserModel {
       locationAccuracy: (map['locationAccuracy'] ?? 'high').toString(),
       biometricEnabled: map['biometricEnabled'] == true,
       serviceCentre: (map['serviceCentre'] ?? '').toString(),
+      officeName: (map['officeName'] ?? '').toString(),
+      officeAddress: (map['officeAddress'] ?? '').toString(),
+      officeLatitude: _double(map['officeLatitude']),
+      officeLongitude: _double(map['officeLongitude']),
       vehicleNumber: (map['vehicleNumber'] ?? '').toString(),
       reportingRegion: (map['reportingRegion'] ?? '').toString(),
       remarks: (map['remarks'] ?? '').toString(),
@@ -182,6 +206,12 @@ class UserModel {
       rejectionReason: (map['rejectionReason'] ?? '').toString(),
       administratorRemarks: (map['administratorRemarks'] ?? '').toString(),
       licenseNumber: (map['licenseNumber'] ?? '').toString(),
+      homeAddress: (map['homeAddress'] ?? '').toString(),
+      homeLatitude: _double(map['homeLatitude']),
+      homeLongitude: _double(map['homeLongitude']),
+      preferredPickupAddress: (map['preferredPickupAddress'] ?? '').toString(),
+      preferredPickupLatitude: _double(map['preferredPickupLatitude']),
+      preferredPickupLongitude: _double(map['preferredPickupLongitude']),
       pendingDeviceId: (map['pendingDeviceId'] ?? '').toString(),
       pendingDeviceModel: (map['pendingDeviceModel'] ?? '').toString(),
       pendingDevicePlatform: (map['pendingDevicePlatform'] ?? '').toString(),
@@ -219,6 +249,10 @@ class UserModel {
       'locationAccuracy': locationAccuracy,
       'biometricEnabled': biometricEnabled,
       'serviceCentre': serviceCentre,
+      'officeName': officeName,
+      'officeAddress': officeAddress,
+      'officeLatitude': officeLatitude,
+      'officeLongitude': officeLongitude,
       'vehicleNumber': vehicleNumber,
       'reportingRegion': reportingRegion,
       'remarks': remarks,
@@ -242,6 +276,12 @@ class UserModel {
       'rejectionReason': rejectionReason,
       'administratorRemarks': administratorRemarks,
       'licenseNumber': licenseNumber,
+      'homeAddress': homeAddress,
+      'homeLatitude': homeLatitude,
+      'homeLongitude': homeLongitude,
+      'preferredPickupAddress': preferredPickupAddress,
+      'preferredPickupLatitude': preferredPickupLatitude,
+      'preferredPickupLongitude': preferredPickupLongitude,
       'pendingDeviceId': pendingDeviceId,
       'pendingDeviceModel': pendingDeviceModel,
       'pendingDevicePlatform': pendingDevicePlatform,
@@ -259,6 +299,11 @@ class UserModel {
     if (value is int) return DateTime.fromMillisecondsSinceEpoch(value);
     if (value is String) return DateTime.tryParse(value);
     return null;
+  }
+
+  static double? _double(Object? value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '');
   }
 
   static List<String> _strings(Object? value) {

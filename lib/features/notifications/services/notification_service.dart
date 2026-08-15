@@ -55,6 +55,9 @@ class NotificationService {
     required String title,
     required String body,
     required String type,
+    String tripId = '',
+    String assignmentId = '',
+    String driverId = '',
   }) async {
     try {
       final notification = AppNotificationModel(
@@ -69,7 +72,12 @@ class NotificationService {
         readAt: null,
       );
 
-      final docRef = await _notifications.add(notification.toMap());
+      final docRef = await _notifications.add(<String, Object?>{
+        ...notification.toMap(),
+        if (tripId.isNotEmpty) 'tripId': tripId,
+        if (assignmentId.isNotEmpty) 'assignmentId': assignmentId,
+        if (driverId.isNotEmpty) 'driverId': driverId,
+      });
       final doc = await docRef.get();
       final data = doc.data();
       if (data == null) {

@@ -1,14 +1,9 @@
 class AuthValidator {
   AuthValidator._();
 
-  static final RegExp _emailPattern = RegExp(
-    r'^[^@\s]+@[^@\s]+\.[^@\s]+$',
-  );
+  static final RegExp _emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
 
-  static String? login({
-    required String email,
-    required String password,
-  }) {
+  static String? login({required String email, required String password}) {
     final emailError = _validateEmail(email);
     if (emailError != null) return emailError;
 

@@ -27,23 +27,13 @@ class LoginTextField extends StatelessWidget {
       child: TextField(
         controller: controller,
         obscureText: obscureText,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 16,
-        ),
+        style: const TextStyle(color: Colors.white, fontSize: 16),
         decoration: InputDecoration(
           border: InputBorder.none,
-          prefixIcon: Icon(
-            icon,
-            color: Colors.white70,
-          ),
+          prefixIcon: Icon(icon, color: Colors.white70),
           hintText: hintText,
-          hintStyle: const TextStyle(
-            color: Colors.white54,
-          ),
-          contentPadding: const EdgeInsets.symmetric(
-            vertical: 18,
-          ),
+          hintStyle: const TextStyle(color: Colors.white54),
+          contentPadding: const EdgeInsets.symmetric(vertical: 18),
         ),
       ),
     );

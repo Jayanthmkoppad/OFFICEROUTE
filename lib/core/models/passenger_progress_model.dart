@@ -7,8 +7,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class PassengerProgressModel {
   final String employeeId;
   final String passengerDisplayName;
+  final String employeeCode;
+  final String roleLabel;
   final int pickupSequence;
   final String status;
+  final String remark;
+  final bool attendanceActive;
+  final bool transportActive;
   final double? distanceToPickupMeters;
   final int? estimatedReadyMinutes;
 
@@ -19,8 +24,13 @@ class PassengerProgressModel {
   const PassengerProgressModel({
     required this.employeeId,
     required this.passengerDisplayName,
+    this.employeeCode = '',
+    this.roleLabel = 'Employee',
     required this.pickupSequence,
     required this.status,
+    this.remark = '',
+    this.attendanceActive = false,
+    this.transportActive = true,
     this.distanceToPickupMeters,
     this.estimatedReadyMinutes,
     required this.locationFreshness,
@@ -54,8 +64,13 @@ class PassengerProgressModel {
       employeeId: id.isNotEmpty ? id : (map['employeeId'] ?? '').toString(),
       passengerDisplayName: (map['passengerDisplayName'] ?? 'Passenger')
           .toString(),
+      employeeCode: (map['employeeCode'] ?? '').toString(),
+      roleLabel: (map['roleLabel'] ?? 'Employee').toString(),
       pickupSequence: parseInt(map['pickupSequence']) ?? 0,
       status: (map['status'] ?? 'assigned').toString(),
+      remark: (map['remark'] ?? '').toString(),
+      attendanceActive: map['attendanceActive'] == true,
+      transportActive: map['transportActive'] != false,
       distanceToPickupMeters: parseDouble(map['distanceToPickupMeters']),
       estimatedReadyMinutes: parseInt(map['estimatedReadyMinutes']),
       locationFreshness: (map['locationFreshness'] ?? 'unknown').toString(),
@@ -67,8 +82,13 @@ class PassengerProgressModel {
     return {
       'employeeId': employeeId,
       'passengerDisplayName': passengerDisplayName,
+      'employeeCode': employeeCode,
+      'roleLabel': roleLabel,
       'pickupSequence': pickupSequence,
       'status': status,
+      'remark': remark,
+      'attendanceActive': attendanceActive,
+      'transportActive': transportActive,
       'distanceToPickupMeters': distanceToPickupMeters,
       'estimatedReadyMinutes': estimatedReadyMinutes,
       'locationFreshness': locationFreshness,
@@ -92,8 +112,13 @@ class PassengerProgressModel {
   PassengerProgressModel copyWith({
     String? employeeId,
     String? passengerDisplayName,
+    String? employeeCode,
+    String? roleLabel,
     int? pickupSequence,
     String? status,
+    String? remark,
+    bool? attendanceActive,
+    bool? transportActive,
     double? distanceToPickupMeters,
     int? estimatedReadyMinutes,
     String? locationFreshness,
@@ -102,8 +127,13 @@ class PassengerProgressModel {
     return PassengerProgressModel(
       employeeId: employeeId ?? this.employeeId,
       passengerDisplayName: passengerDisplayName ?? this.passengerDisplayName,
+      employeeCode: employeeCode ?? this.employeeCode,
+      roleLabel: roleLabel ?? this.roleLabel,
       pickupSequence: pickupSequence ?? this.pickupSequence,
       status: status ?? this.status,
+      remark: remark ?? this.remark,
+      attendanceActive: attendanceActive ?? this.attendanceActive,
+      transportActive: transportActive ?? this.transportActive,
       distanceToPickupMeters:
           distanceToPickupMeters ?? this.distanceToPickupMeters,
       estimatedReadyMinutes:

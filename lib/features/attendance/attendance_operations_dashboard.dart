@@ -299,7 +299,8 @@ class _AttendanceOperationsDashboardState
                     child: PopupMenuButton<AttendanceOperationsFilter>(
                       initialValue: _filter,
                       onSelected: _setFilter,
-                      itemBuilder: (context) => AttendanceOperationsFilter.values
+                      itemBuilder: (context) => AttendanceOperationsFilter
+                          .values
                           .map(
                             (filter) => PopupMenuItem(
                               value: filter,
@@ -489,12 +490,12 @@ class _AttendanceOperationsDashboardState
               final columns = constraints.maxWidth >= 1100
                   ? 6
                   : constraints.maxWidth >= 760
-                      ? 5
-                      : constraints.maxWidth >= 480
-                          ? 3
-                          : 2;
-              final width = (constraints.maxWidth - ((columns - 1) * 8)) /
-                  columns;
+                  ? 5
+                  : constraints.maxWidth >= 480
+                  ? 3
+                  : 2;
+              final width =
+                  (constraints.maxWidth - ((columns - 1) * 8)) / columns;
               return Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -677,8 +678,8 @@ class _AttendanceOperationsDashboardState
               final columns = constraints.maxWidth >= 1040
                   ? 8
                   : constraints.maxWidth >= 700
-                      ? 4
-                      : 2;
+                  ? 4
+                  : 2;
               const gap = 8.0;
               final width =
                   (constraints.maxWidth - ((columns - 1) * gap)) / columns;
@@ -796,9 +797,7 @@ class _AttendanceOperationsDashboardState
     );
   }
 
-  Widget _buildEmployeeTable(
-    List<ManagerEmployeeSummaryModel> employees,
-  ) {
+  Widget _buildEmployeeTable(List<ManagerEmployeeSummaryModel> employees) {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: DataTable(
@@ -822,22 +821,130 @@ class _AttendanceOperationsDashboardState
           DataColumn(label: Text('Attendance')),
           DataColumn(label: Text('Actions')),
         ],
-        rows: employees.map((summary) {
-          final attendance = summary.todayAttendance;
-          final status = _employeeStatus(summary);
-          final statusColor = _statusColor(status);
-          return DataRow(
-            cells: [
-              DataCell(
-                SizedBox(
-                  width: 190,
-                  child: Row(
+        rows: employees
+            .map((summary) {
+              final attendance = summary.todayAttendance;
+              final status = _employeeStatus(summary);
+              final statusColor = _statusColor(status);
+              return DataRow(
+                cells: [
+                  DataCell(
+                    SizedBox(
+                      width: 190,
+                      child: Row(
+                        children: [
+                          _EmployeeAvatar(summary: summary),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _employeeName(summary),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTextStyles.bodyMedium.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                Text(
+                                  summary.employee.email,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTextStyles.caption,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  DataCell(Text(_shortId(summary.employee.uid))),
+                  const DataCell(
+                    _UnavailableValue(
+                      reason: 'Designation is not stored in users.',
+                    ),
+                  ),
+                  const DataCell(
+                    _UnavailableValue(
+                      reason: 'Department is not stored in users.',
+                    ),
+                  ),
+                  const DataCell(
+                    _UnavailableValue(reason: 'Branch is not stored in users.'),
+                  ),
+                  DataCell(
+                    PremiumStatusChip(label: status, color: statusColor),
+                  ),
+                  const DataCell(
+                    _UnavailableValue(reason: 'No shift model is available.'),
+                  ),
+                  DataCell(
+                    Text(
+                      _formatDuration(
+                        attendance?.netWorkingDuration(DateTime.now()) ??
+                            Duration.zero,
+                      ),
+                    ),
+                  ),
+                  DataCell(Text('${summary.totalVisits}')),
+                  DataCell(
+                    Text(
+                      _formatDuration(
+                        attendance?.breakDuration(DateTime.now()) ??
+                            Duration.zero,
+                      ),
+                    ),
+                  ),
+                  const DataCell(
+                    _UnavailableValue(
+                      reason: 'No approved overtime policy or field exists.',
+                    ),
+                  ),
+                  DataCell(
+                    Text(
+                      attendance?.checkInTime == null ? 'Absent' : 'Present',
+                    ),
+                  ),
+                  DataCell(
+                    IconButton(
+                      tooltip: 'Employee actions',
+                      onPressed: () => _showEmployeeActions(summary),
+                      icon: const Icon(Icons.more_horiz),
+                    ),
+                  ),
+                ],
+              );
+            })
+            .toList(growable: false),
+      ),
+    );
+  }
+
+  Widget _buildEmployeeCards(List<ManagerEmployeeSummaryModel> employees) {
+    return Column(
+      children: employees
+          .map((summary) {
+            final attendance = summary.todayAttendance;
+            final status = _employeeStatus(summary);
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withAlpha(8),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withAlpha(22)),
+              ),
+              child: Column(
+                children: [
+                  Row(
                     children: [
                       _EmployeeAvatar(summary: summary),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(
@@ -849,158 +956,57 @@ class _AttendanceOperationsDashboardState
                               ),
                             ),
                             Text(
-                              summary.employee.email,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              _shortId(summary.employee.uid),
                               style: AppTextStyles.caption,
                             ),
                           ],
                         ),
                       ),
+                      PremiumStatusChip(
+                        label: status,
+                        color: _statusColor(status),
+                      ),
+                      IconButton(
+                        tooltip: 'Employee actions',
+                        onPressed: () => _showEmployeeActions(summary),
+                        icon: const Icon(Icons.more_horiz),
+                      ),
                     ],
                   ),
-                ),
-              ),
-              DataCell(Text(_shortId(summary.employee.uid))),
-              const DataCell(
-                _UnavailableValue(
-                  reason: 'Designation is not stored in users.',
-                ),
-              ),
-              const DataCell(
-                _UnavailableValue(
-                  reason: 'Department is not stored in users.',
-                ),
-              ),
-              const DataCell(
-                _UnavailableValue(reason: 'Branch is not stored in users.'),
-              ),
-              DataCell(PremiumStatusChip(label: status, color: statusColor)),
-              const DataCell(
-                _UnavailableValue(reason: 'No shift model is available.'),
-              ),
-              DataCell(
-                Text(
-                  _formatDuration(
-                    attendance?.netWorkingDuration(DateTime.now()) ??
-                        Duration.zero,
-                  ),
-                ),
-              ),
-              DataCell(Text('${summary.totalVisits}')),
-              DataCell(
-                Text(
-                  _formatDuration(
-                    attendance?.breakDuration(DateTime.now()) ?? Duration.zero,
-                  ),
-                ),
-              ),
-              const DataCell(
-                _UnavailableValue(
-                  reason: 'No approved overtime policy or field exists.',
-                ),
-              ),
-              DataCell(
-                Text(attendance?.checkInTime == null ? 'Absent' : 'Present'),
-              ),
-              DataCell(
-                IconButton(
-                  tooltip: 'Employee actions',
-                  onPressed: () => _showEmployeeActions(summary),
-                  icon: const Icon(Icons.more_horiz),
-                ),
-              ),
-            ],
-          );
-        }).toList(growable: false),
-      ),
-    );
-  }
-
-  Widget _buildEmployeeCards(
-    List<ManagerEmployeeSummaryModel> employees,
-  ) {
-    return Column(
-      children: employees.map((summary) {
-        final attendance = summary.todayAttendance;
-        final status = _employeeStatus(summary);
-        return Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: Colors.white.withAlpha(8),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: Colors.white.withAlpha(22)),
-          ),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  _EmployeeAvatar(summary: summary),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          _employeeName(summary),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: AppTextStyles.bodyMedium.copyWith(
-                            fontWeight: FontWeight.w700,
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _CompactValue(
+                          label: 'Work',
+                          value: _formatDuration(
+                            attendance?.netWorkingDuration(DateTime.now()) ??
+                                Duration.zero,
                           ),
                         ),
-                        Text(
-                          _shortId(summary.employee.uid),
-                          style: AppTextStyles.caption,
+                      ),
+                      Expanded(
+                        child: _CompactValue(
+                          label: 'Break',
+                          value: _formatDuration(
+                            attendance?.breakDuration(DateTime.now()) ??
+                                Duration.zero,
+                          ),
                         ),
-                      ],
-                    ),
-                  ),
-                  PremiumStatusChip(
-                    label: status,
-                    color: _statusColor(status),
-                  ),
-                  IconButton(
-                    tooltip: 'Employee actions',
-                    onPressed: () => _showEmployeeActions(summary),
-                    icon: const Icon(Icons.more_horiz),
+                      ),
+                      Expanded(
+                        child: _CompactValue(
+                          label: 'Visits',
+                          value: '${summary.totalVisits}',
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: _CompactValue(
-                      label: 'Work',
-                      value: _formatDuration(
-                        attendance?.netWorkingDuration(DateTime.now()) ??
-                            Duration.zero,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: _CompactValue(
-                      label: 'Break',
-                      value: _formatDuration(
-                        attendance?.breakDuration(DateTime.now()) ??
-                            Duration.zero,
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: _CompactValue(
-                      label: 'Visits',
-                      value: '${summary.totalVisits}',
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      }).toList(growable: false),
+            );
+          })
+          .toList(growable: false),
     );
   }
 
@@ -1362,10 +1368,7 @@ class _AttendanceOperationsDashboardState
       _KpiValue('Average Break', _formatDuration(metrics.averageBreak)),
       _KpiValue('Average Work', _formatDuration(metrics.averageWork)),
       _KpiValue('GPS Compliance', _formatPercent(metrics.gpsCompliance)),
-      _KpiValue(
-        'Checkout Discipline',
-        metrics.checkoutComplianceLabel,
-      ),
+      _KpiValue('Checkout Discipline', metrics.checkoutComplianceLabel),
       _KpiValue('Visits Completed', '${metrics.completedVisits}'),
       _KpiValue('Workforce Health', '${metrics.healthScore}/100'),
     ];
@@ -1388,8 +1391,8 @@ class _AttendanceOperationsDashboardState
                   final columns = constraints.maxWidth >= 620
                       ? 5
                       : constraints.maxWidth >= 420
-                          ? 3
-                          : 2;
+                      ? 3
+                      : 2;
                   const gap = 8.0;
                   final width =
                       (constraints.maxWidth - ((columns - 1) * gap)) / columns;
@@ -1562,18 +1565,12 @@ class _AttendanceOperationsDashboardState
       builder: (context, constraints) {
         final columns = constraints.maxWidth >= 300 ? 2 : 1;
         const gap = 8.0;
-        final width =
-            (constraints.maxWidth - ((columns - 1) * gap)) / columns;
+        final width = (constraints.maxWidth - ((columns - 1) * gap)) / columns;
         return Wrap(
           spacing: gap,
           runSpacing: gap,
           children: children
-              .map(
-                (child) => SizedBox(
-                  width: width,
-                  child: child,
-                ),
-              )
+              .map((child) => SizedBox(width: width, child: child))
               .toList(growable: false),
         );
       },
@@ -1586,7 +1583,8 @@ class _AttendanceOperationsDashboardState
     final query = _searchController.text.trim().toLowerCase();
     final filtered = widget.employees.where((summary) {
       final employee = summary.employee;
-      final matchesSearch = query.isEmpty ||
+      final matchesSearch =
+          query.isEmpty ||
           employee.name.toLowerCase().contains(query) ||
           employee.email.toLowerCase().contains(query) ||
           employee.phone.toLowerCase().contains(query) ||
@@ -1606,11 +1604,9 @@ class _AttendanceOperationsDashboardState
               attendance?.isOnBreak != true &&
               summary.activeVisits == 0;
         case AttendanceOperationsFilter.offDuty:
-          return summary.activeVisits == 0 &&
-              attendance?.isCheckedOut == true;
+          return summary.activeVisits == 0 && attendance?.isCheckedOut == true;
         case AttendanceOperationsFilter.onBreak:
-          return summary.activeVisits == 0 &&
-              attendance?.isOnBreak == true;
+          return summary.activeVisits == 0 && attendance?.isOnBreak == true;
         case AttendanceOperationsFilter.inVisit:
           return summary.activeVisits > 0;
         case AttendanceOperationsFilter.gpsException:
@@ -1636,9 +1632,9 @@ class _AttendanceOperationsDashboardState
     filtered.sort((a, b) {
       switch (_sort) {
         case _EmployeeSort.name:
-          return _employeeName(a).toLowerCase().compareTo(
-                _employeeName(b).toLowerCase(),
-              );
+          return _employeeName(
+            a,
+          ).toLowerCase().compareTo(_employeeName(b).toLowerCase());
         case _EmployeeSort.status:
           return _employeeStatus(a).compareTo(_employeeStatus(b));
         case _EmployeeSort.workingHours:
@@ -1680,7 +1676,9 @@ class _AttendanceOperationsDashboardState
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(metric.unavailableReason ?? 'Metric unavailable.')),
+      SnackBar(
+        content: Text(metric.unavailableReason ?? 'Metric unavailable.'),
+      ),
     );
   }
 
@@ -1740,7 +1738,10 @@ class _AttendanceOperationsDashboardState
                 style: AppTextStyles.headingSmall.copyWith(letterSpacing: 0),
               ),
               const SizedBox(height: 6),
-              Text(_shortId(summary.employee.uid), style: AppTextStyles.caption),
+              Text(
+                _shortId(summary.employee.uid),
+                style: AppTextStyles.caption,
+              ),
               const SizedBox(height: 14),
               _ActionTile(
                 icon: Icons.timeline_outlined,
@@ -1890,7 +1891,8 @@ class _AttendanceOperationsDashboardState
                               'The attendance history could not be loaded. Try again later.',
                         );
                       }
-                      final records = snapshot.data ?? const <AttendanceModel>[];
+                      final records =
+                          snapshot.data ?? const <AttendanceModel>[];
                       if (records.isEmpty) {
                         return const _InlineEmptyState(
                           icon: Icons.history_outlined,
@@ -1983,8 +1985,8 @@ class _AttendanceOperationsDashboardState
                                 color: visit.status == 'completed'
                                     ? AppColors.success
                                     : visit.status == 'checked_in'
-                                        ? AppColors.info
-                                        : AppColors.textSecondary,
+                                    ? AppColors.info
+                                    : AppColors.textSecondary,
                               ),
                             );
                           },
@@ -2060,10 +2062,10 @@ class _SnapshotMetric {
     required this.label,
     required this.icon,
     required String reason,
-  })  : value = '--',
-        color = AppColors.textDisabled,
-        filter = null,
-        unavailableReason = reason;
+  }) : value = '--',
+       color = AppColors.textDisabled,
+       filter = null,
+       unavailableReason = reason;
 }
 
 class _SnapshotCard extends StatelessWidget {
@@ -2094,11 +2096,7 @@ class _SnapshotCard extends StatelessWidget {
                   Icon(metric.icon, size: 16, color: metric.color),
                   const Spacer(),
                   if (metric.unavailableReason != null)
-                    Icon(
-                      Icons.info_outline,
-                      size: 14,
-                      color: metric.color,
-                    ),
+                    Icon(Icons.info_outline, size: 14, color: metric.color),
                 ],
               ),
               const Spacer(),
@@ -2551,11 +2549,10 @@ class _DailyAnalyticsPanel extends StatelessWidget {
         final columns = constraints.maxWidth >= 720
             ? 4
             : constraints.maxWidth >= 420
-                ? 3
-                : 2;
+            ? 3
+            : 2;
         const gap = 8.0;
-        final width =
-            (constraints.maxWidth - ((columns - 1) * gap)) / columns;
+        final width = (constraints.maxWidth - ((columns - 1) * gap)) / columns;
         return Wrap(
           spacing: gap,
           runSpacing: gap,
@@ -2563,10 +2560,7 @@ class _DailyAnalyticsPanel extends StatelessWidget {
               .map(
                 (value) => SizedBox(
                   width: width,
-                  child: _CompactValue(
-                    label: value.label,
-                    value: value.value,
-                  ),
+                  child: _CompactValue(label: value.label, value: value.value),
                 ),
               )
               .toList(growable: false),
@@ -2762,9 +2756,9 @@ class _MonthlyWorkHoursTrend extends StatelessWidget {
         continue;
       }
       final reference = record.checkOutTime ?? now;
-      dailyHours.putIfAbsent(date.day, () => []).add(
-            record.netWorkingDuration(reference).inMinutes / 60,
-          );
+      dailyHours
+          .putIfAbsent(date.day, () => [])
+          .add(record.netWorkingDuration(reference).inMinutes / 60);
     }
     if (dailyHours.isEmpty) {
       return const _InlineEmptyState(
@@ -2778,7 +2772,7 @@ class _MonthlyWorkHoursTrend extends StatelessWidget {
     for (final entry in dailyHours.entries) {
       averages[entry.key] =
           entry.value.fold<double>(0.0, (sum, value) => sum + value) /
-              entry.value.length;
+          entry.value.length;
     }
     final peakHours = averages.values.fold<double>(
       0.0,
@@ -2815,10 +2809,7 @@ class _MonthlyWorkHoursTrend extends StatelessWidget {
                           alignment: Alignment.bottomCenter,
                           child: Container(
                             width: 14,
-                            height: math.max(
-                              3.0,
-                              (hours / maxHours) * 100,
-                            ),
+                            height: math.max(3.0, (hours / maxHours) * 100),
                             decoration: BoxDecoration(
                               color: AppColors.info,
                               borderRadius: BorderRadius.circular(4),
@@ -3063,8 +3054,8 @@ class _OperationsMetrics {
     final absent = math.max(0, totalEmployees - present);
     final onBreak = employees
         .where(
-          (item) => item.activeVisits == 0 &&
-              item.todayAttendance?.isOnBreak == true,
+          (item) =>
+              item.activeVisits == 0 && item.todayAttendance?.isOnBreak == true,
         )
         .length;
     final inVisit = employees.where((item) => item.activeVisits > 0).length;
@@ -3076,7 +3067,8 @@ class _OperationsMetrics {
     }).length;
     final offDuty = employees
         .where(
-          (item) => item.activeVisits == 0 &&
+          (item) =>
+              item.activeVisits == 0 &&
               item.todayAttendance?.isCheckedOut == true,
         )
         .length;
@@ -3084,23 +3076,35 @@ class _OperationsMetrics {
     final selectedDateIsToday = DateUtils.isSameDay(selectedDate, liveNow);
     final liveStatusApplicable = selectedDateIsToday && liveLocationsLoaded;
     final onlineLocationIds = liveStatusApplicable
-        ? employees.where((summary) {
-            final location = liveLocationsByUserId[summary.employee.uid];
-            if (location == null) return false;
-            if (location.status == LocationTrackingPolicy.statusPaused) {
-              return summary.todayAttendance?.isOnBreak == true;
-            }
-            return location.status == LocationTrackingPolicy.statusActive &&
-                !LocationTrackingPolicy.isStale(location.updatedAt, liveNow);
-          }).map((summary) => summary.employee.uid).toSet()
+        ? employees
+              .where((summary) {
+                final location = liveLocationsByUserId[summary.employee.uid];
+                if (location == null) return false;
+                if (location.status == LocationTrackingPolicy.statusPaused) {
+                  return summary.todayAttendance?.isOnBreak == true;
+                }
+                return location.status == LocationTrackingPolicy.statusActive &&
+                    !LocationTrackingPolicy.isStale(
+                      location.updatedAt,
+                      liveNow,
+                    );
+              })
+              .map((summary) => summary.employee.uid)
+              .toSet()
         : <String>{};
     final activeLocationIds = liveStatusApplicable
-        ? employees.where((summary) {
-            final location = liveLocationsByUserId[summary.employee.uid];
-            return location != null &&
-                location.status == LocationTrackingPolicy.statusActive &&
-                !LocationTrackingPolicy.isStale(location.updatedAt, liveNow);
-          }).map((summary) => summary.employee.uid).toSet()
+        ? employees
+              .where((summary) {
+                final location = liveLocationsByUserId[summary.employee.uid];
+                return location != null &&
+                    location.status == LocationTrackingPolicy.statusActive &&
+                    !LocationTrackingPolicy.isStale(
+                      location.updatedAt,
+                      liveNow,
+                    );
+              })
+              .map((summary) => summary.employee.uid)
+              .toSet()
         : <String>{};
     final available = employees.where((summary) {
       final attendance = summary.todayAttendance;
@@ -3118,7 +3122,8 @@ class _OperationsMetrics {
     for (final summary in presentEmployees) {
       final attendance = summary.todayAttendance!;
       final validation = attendance.locationValidationStatus.toLowerCase();
-      final gpsValid = attendance.hasCheckInLocation &&
+      final gpsValid =
+          attendance.hasCheckInLocation &&
           (validation == 'validated' || validation == 'valid');
       if (!gpsValid) gpsExceptionIds.add(summary.employee.uid);
       if (attendance.syncStatus.toLowerCase() != 'synced') syncPending++;
@@ -3144,12 +3149,13 @@ class _OperationsMetrics {
     final isPastDate = selectedDay.isBefore(currentDay);
     final missedCheckoutIds = isPastDate
         ? employees
-            .where(
-              (item) => item.todayAttendance?.checkInTime != null &&
-                  item.todayAttendance?.checkOutTime == null,
-            )
-            .map((item) => item.employee.uid)
-            .toSet()
+              .where(
+                (item) =>
+                    item.todayAttendance?.checkInTime != null &&
+                    item.todayAttendance?.checkOutTime == null,
+              )
+              .map((item) => item.employee.uid)
+              .toSet()
         : <String>{};
 
     final attendanceRate = totalEmployees == 0 ? 0.0 : present / totalEmployees;
@@ -3158,23 +3164,26 @@ class _OperationsMetrics {
         .map((record) => record.userId)
         .toSet()
         .length;
-    final previousAttendanceRate =
-        totalEmployees == 0 ? 0.0 : previousPresent / totalEmployees;
+    final previousAttendanceRate = totalEmployees == 0
+        ? 0.0
+        : previousPresent / totalEmployees;
     final gpsCompliance = present == 0
         ? 0.0
         : (present - gpsExceptionIds.length) / present;
     final checkoutCompliance = present == 0
         ? 0.0
         : isPastDate
-            ? (present - missedCheckoutIds.length) / present
-            : 0.0;
+        ? (present - missedCheckoutIds.length) / present
+        : 0.0;
 
     final nowReference = DateTime.now();
-    final workingRecords = presentEmployees.where((summary) {
-      final attendance = summary.todayAttendance!;
-      return attendance.checkOutTime != null ||
-          DateUtils.isSameDay(selectedDate, nowReference);
-    }).toList(growable: false);
+    final workingRecords = presentEmployees
+        .where((summary) {
+          final attendance = summary.todayAttendance!;
+          return attendance.checkOutTime != null ||
+              DateUtils.isSameDay(selectedDate, nowReference);
+        })
+        .toList(growable: false);
     final totalWorkMinutes = workingRecords.fold<int>(0, (sum, summary) {
       final attendance = summary.todayAttendance!;
       return sum +
@@ -3213,9 +3222,9 @@ class _OperationsMetrics {
     // their approved backend fields and policies exist.
     final rawHealthScore = isPastDate
         ? ((attendanceRate * 60) +
-                (gpsCompliance * 25) +
-                (checkoutCompliance * 15))
-            .round()
+                  (gpsCompliance * 25) +
+                  (checkoutCompliance * 15))
+              .round()
         : ((attendanceRate * 70) + (gpsCompliance * 30)).round();
     final healthScore = math.max(0, math.min(100, rawHealthScore));
 
@@ -3401,8 +3410,9 @@ class _OperationsMetrics {
       );
     }
 
-    final completedVisits =
-        visits.where((visit) => visit.status == 'completed').length;
+    final completedVisits = visits
+        .where((visit) => visit.status == 'completed')
+        .length;
 
     return _OperationsMetrics(
       totalEmployees: totalEmployees,
@@ -3454,9 +3464,8 @@ class _OperationsMetrics {
     return AppColors.error;
   }
 
-  String get checkoutComplianceLabel => checkoutDisciplineApplicable
-      ? _formatPercent(checkoutCompliance)
-      : 'N/A';
+  String get checkoutComplianceLabel =>
+      checkoutDisciplineApplicable ? _formatPercent(checkoutCompliance) : 'N/A';
 
   String get healthFormulaDescription {
     if (checkoutDisciplineApplicable) {
@@ -3631,7 +3640,8 @@ String _formatClock(DateTime? time) {
 
 String _averageTimeLabel(List<DateTime> values) {
   if (values.isEmpty) return 'N/A';
-  final averageMinutes = values.fold<int>(
+  final averageMinutes =
+      values.fold<int>(
         0,
         (sum, value) => sum + value.hour * 60 + value.minute,
       ) ~/

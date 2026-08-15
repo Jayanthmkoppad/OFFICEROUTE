@@ -1201,4 +1201,105 @@ void main() {
       );
     });
   });
+
+  group('Employee current-day pickup request lifecycle', () {
+    test(
+      'creates one schema-valid request from approved profile pickup',
+      () async {
+        Map<String, Object?>? captured;
+        final controller = EmployeeTransportController(
+          initListeners: false,
+          currentUidGetter: () => 'emp_request',
+          clock: () => DateTime(2026, 8, 5, 8),
+          pickupRequestCreator:
+              ({
+                required userId,
+                required dateKey,
+                required pickupName,
+                required pickupAddress,
+                required pickupLatitude,
+                required pickupLongitude,
+                required branch,
+                required serviceCentre,
+              }) async {
+                captured = <String, Object?>{
+                  'userId': userId,
+                  'dateKey': dateKey,
+                  'pickupAddress': pickupAddress,
+                  'pickupLatitude': pickupLatitude,
+                  'pickupLongitude': pickupLongitude,
+                };
+                return CabAssignmentMemberModel(
+                  id: '${dateKey}_$userId',
+                  dateKey: dateKey,
+                  userId: userId,
+                  status: 'assigned',
+                  pickupName: pickupName,
+                  pickupAddress: pickupAddress,
+                  pickupLatitude: pickupLatitude,
+                  pickupLongitude: pickupLongitude,
+                );
+              },
+        );
+        controller.currentUser = const UserModel(
+          uid: 'emp_request',
+          name: 'Request Employee',
+          email: 'employee@example.com',
+          phone: '',
+          role: 'employee',
+          profileImage: '',
+          preferredPickupAddress: 'Approved Main Gate',
+          preferredPickupLatitude: 15.36,
+          preferredPickupLongitude: 75.12,
+          branch: 'Hubballi',
+        );
+
+        final result = await controller.requestPickupForToday();
+
+        expect(result.isAccepted, isTrue);
+        expect(captured, containsPair('userId', 'emp_request'));
+        expect(captured, containsPair('dateKey', '2026-08-05'));
+        expect(controller.myAssignmentMember?.driverId, isEmpty);
+        expect(controller.myAssignmentMember?.vehicleId, isEmpty);
+        expect(controller.homeState, isNot('E'));
+        controller.dispose();
+      },
+    );
+
+    test(
+      'Ready and cancellation update only the owned request status',
+      () async {
+        final writes = <String>[];
+        final controller = EmployeeTransportController(
+          initListeners: false,
+          currentUidGetter: () => 'emp_request',
+          clock: () => DateTime(2026, 8, 5, 8),
+          memberStatusUpdater: ({required memberId, required status}) async {
+            writes.add('$memberId:$status');
+          },
+        );
+        controller.myAssignmentMember = const CabAssignmentMemberModel(
+          id: '2026-08-05_emp_request',
+          dateKey: '2026-08-05',
+          userId: 'emp_request',
+          status: 'assigned',
+          pickupAddress: 'Approved Main Gate',
+          pickupLatitude: 15.36,
+          pickupLongitude: 75.12,
+        );
+
+        final ready = await controller.markPickupRequestReady();
+        final cancelled = await controller.cancelPickupRequest();
+
+        expect(ready.isAccepted, isTrue);
+        expect(cancelled.isAccepted, isTrue);
+        expect(writes, <String>[
+          '2026-08-05_emp_request:ready',
+          '2026-08-05_emp_request:cancelled',
+        ]);
+        expect(controller.myAssignmentMember?.status, 'cancelled');
+        controller.dispose();
+      },
+    );
+  });
 }

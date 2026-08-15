@@ -58,7 +58,9 @@ class ReportsService {
             date.month == day.month &&
             date.day == day.day;
       });
-      final dayVisits = visits.where((visit) => _isSameDay(visit.createdAt, day));
+      final dayVisits = visits.where(
+        (visit) => _isSameDay(visit.createdAt, day),
+      );
 
       return ReportBucketModel(
         label: '${day.day}/${day.month}',
@@ -114,7 +116,10 @@ class ReportsService {
     final endLat = visit.checkOutLatitude;
     final endLng = visit.checkOutLongitude;
 
-    if (startLat == null || startLng == null || endLat == null || endLng == null) {
+    if (startLat == null ||
+        startLng == null ||
+        endLat == null ||
+        endLng == null) {
       return 0;
     }
 
@@ -130,7 +135,8 @@ class ReportsService {
     const earthRadiusKm = 6371.0;
     final dLat = _degreesToRadians(endLat - startLat);
     final dLng = _degreesToRadians(endLng - startLng);
-    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+    final a =
+        math.sin(dLat / 2) * math.sin(dLat / 2) +
         math.cos(_degreesToRadians(startLat)) *
             math.cos(_degreesToRadians(endLat)) *
             math.sin(dLng / 2) *

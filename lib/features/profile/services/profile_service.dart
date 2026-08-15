@@ -48,13 +48,16 @@ class ProfileService {
     UserModel user,
   ) async {
     final reportFuture = ReportsService.loadMySummary();
-    final notificationsFuture =
-        NotificationService.fetchNotificationsForUser(user.uid);
+    final notificationsFuture = NotificationService.fetchNotificationsForUser(
+      user.uid,
+    );
     final preferencesFuture = NotificationService.loadPreferences(user.uid);
     final complaintsFuture = ComplaintService.fetchComplaintsForUser(user.uid);
     final liveLocationFuture = LiveLocationService.fetchLiveLocation(user.uid);
     final permissionFuture = LocationPermissionService.checkPermissionState();
-    final organizationFuture = OrganizationService.loadOperations(DateTime.now());
+    final organizationFuture = OrganizationService.loadOperations(
+      DateTime.now(),
+    );
 
     final report = await reportFuture;
     final now = DateTime.now();
@@ -75,8 +78,9 @@ class ProfileService {
       todayAttendance: todayAttendance,
       attendance: List<AttendanceModel>.unmodifiable(report.attendanceRecords),
       visits: List<CustomerVisitModel>.unmodifiable(report.visits),
-      notifications:
-          List<AppNotificationModel>.unmodifiable(await notificationsFuture),
+      notifications: List<AppNotificationModel>.unmodifiable(
+        await notificationsFuture,
+      ),
       notificationPreferences: await preferencesFuture,
       complaints: List<ComplaintModel>.unmodifiable(await complaintsFuture),
       report: report,
@@ -143,5 +147,4 @@ class ProfileService {
       preferences: preferences,
     );
   }
-
 }

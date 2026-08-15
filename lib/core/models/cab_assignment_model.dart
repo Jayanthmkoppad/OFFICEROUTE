@@ -35,6 +35,10 @@ class CabAssignmentModel {
   /// Office destination longitude.
   final double? officeLongitude;
 
+  /// Operational scope used to resolve the configured destination.
+  final String branch;
+  final String serviceCentre;
+
   /// Assignment status, for example `draft`, `active`, or `completed`.
   final String status;
 
@@ -50,6 +54,12 @@ class CabAssignmentModel {
   /// Internal remarks for operations.
   final String remarks;
 
+  /// Cancellation audit fields retained for terminal history.
+  final String cancellationReason;
+  final String cancellationExplanation;
+  final String cancelledBy;
+  final DateTime? cancelledAt;
+
   /// Creates a daily cab assignment model.
   const CabAssignmentModel({
     this.id = '',
@@ -62,11 +72,17 @@ class CabAssignmentModel {
     this.officeAddress = '',
     this.officeLatitude,
     this.officeLongitude,
+    this.branch = '',
+    this.serviceCentre = '',
     this.status = 'active',
     this.assignedBy = '',
     this.assignedAt,
     this.updatedAt,
     this.remarks = '',
+    this.cancellationReason = '',
+    this.cancellationExplanation = '',
+    this.cancelledBy = '',
+    this.cancelledAt,
   });
 
   /// Creates an assignment model from a Firestore document map.
@@ -88,11 +104,18 @@ class CabAssignmentModel {
       officeAddress: (map['officeAddress'] ?? '').toString(),
       officeLatitude: _parseNullableDouble(map['officeLatitude']),
       officeLongitude: _parseNullableDouble(map['officeLongitude']),
+      branch: (map['branch'] ?? '').toString(),
+      serviceCentre: (map['serviceCentre'] ?? '').toString(),
       status: (map['status'] ?? 'active').toString(),
       assignedBy: (map['assignedBy'] ?? '').toString(),
       assignedAt: assignedAt,
       updatedAt: _parseDateTime(map['updatedAt']),
       remarks: (map['remarks'] ?? '').toString(),
+      cancellationReason: (map['cancellationReason'] ?? '').toString(),
+      cancellationExplanation: (map['cancellationExplanation'] ?? '')
+          .toString(),
+      cancelledBy: (map['cancelledBy'] ?? '').toString(),
+      cancelledAt: _parseDateTime(map['cancelledAt']),
     );
   }
 
@@ -110,11 +133,19 @@ class CabAssignmentModel {
       'officeAddress': officeAddress,
       'officeLatitude': officeLatitude,
       'officeLongitude': officeLongitude,
+      'branch': branch,
+      'serviceCentre': serviceCentre,
       'status': status,
       'assignedBy': assignedBy,
       'assignedAt': assignedAt == null ? null : Timestamp.fromDate(assignedAt!),
       'updatedAt': updatedAt == null ? null : Timestamp.fromDate(updatedAt!),
       'remarks': remarks,
+      'cancellationReason': cancellationReason,
+      'cancellationExplanation': cancellationExplanation,
+      'cancelledBy': cancelledBy,
+      'cancelledAt': cancelledAt == null
+          ? null
+          : Timestamp.fromDate(cancelledAt!),
     };
   }
 
@@ -130,11 +161,17 @@ class CabAssignmentModel {
     String? officeAddress,
     double? officeLatitude,
     double? officeLongitude,
+    String? branch,
+    String? serviceCentre,
     String? status,
     String? assignedBy,
     DateTime? assignedAt,
     DateTime? updatedAt,
     String? remarks,
+    String? cancellationReason,
+    String? cancellationExplanation,
+    String? cancelledBy,
+    DateTime? cancelledAt,
   }) {
     return CabAssignmentModel(
       id: id ?? this.id,
@@ -147,11 +184,18 @@ class CabAssignmentModel {
       officeAddress: officeAddress ?? this.officeAddress,
       officeLatitude: officeLatitude ?? this.officeLatitude,
       officeLongitude: officeLongitude ?? this.officeLongitude,
+      branch: branch ?? this.branch,
+      serviceCentre: serviceCentre ?? this.serviceCentre,
       status: status ?? this.status,
       assignedBy: assignedBy ?? this.assignedBy,
       assignedAt: assignedAt ?? this.assignedAt,
       updatedAt: updatedAt ?? this.updatedAt,
       remarks: remarks ?? this.remarks,
+      cancellationReason: cancellationReason ?? this.cancellationReason,
+      cancellationExplanation:
+          cancellationExplanation ?? this.cancellationExplanation,
+      cancelledBy: cancelledBy ?? this.cancelledBy,
+      cancelledAt: cancelledAt ?? this.cancelledAt,
     );
   }
 

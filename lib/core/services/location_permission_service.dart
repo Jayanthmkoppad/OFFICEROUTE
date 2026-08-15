@@ -9,13 +9,11 @@ class LocationPermissionService {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     final permission = await Geolocator.checkPermission();
 
-    return _buildState(
-      serviceEnabled: serviceEnabled,
-      permission: permission,
-    );
+    return _buildState(serviceEnabled: serviceEnabled, permission: permission);
   }
 
-  static Future<LocationPermissionStateModel> requestForegroundPermission() async {
+  static Future<LocationPermissionStateModel>
+  requestForegroundPermission() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
     var permission = await Geolocator.checkPermission();
 
@@ -23,14 +21,11 @@ class LocationPermissionService {
       permission = await Geolocator.requestPermission();
     }
 
-    return _buildState(
-      serviceEnabled: serviceEnabled,
-      permission: permission,
-    );
+    return _buildState(serviceEnabled: serviceEnabled, permission: permission);
   }
 
   static Future<LocationPermissionStateModel>
-      ensureForegroundPermission() async {
+  ensureForegroundPermission() async {
     final checkedState = await checkPermissionState();
     if (checkedState.canUseLocation) return checkedState;
 
@@ -55,7 +50,8 @@ class LocationPermissionService {
     required bool serviceEnabled,
     required LocationPermission permission,
   }) {
-    final foregroundAllowed = permission == LocationPermission.whileInUse ||
+    final foregroundAllowed =
+        permission == LocationPermission.whileInUse ||
         permission == LocationPermission.always;
     final backgroundAllowed = permission == LocationPermission.always;
     final permanentlyDenied = permission == LocationPermission.deniedForever;

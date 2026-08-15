@@ -323,8 +323,7 @@ class _SmartVisitPlannerDialogState extends State<SmartVisitPlannerDialog>
       if (_dealerNameController.text.trim().isEmpty) 'dealer name',
       if (_dealerAddressController.text.trim().isEmpty) 'dealer address',
       if (!RegExp(r'^[1-9][0-9]{5}$').hasMatch(pinCode)) 'valid PIN code',
-      if (_complaintSummaryController.text.trim().isEmpty)
-        'complaint summary',
+      if (_complaintSummaryController.text.trim().isEmpty) 'complaint summary',
       if (_customerNameController.text.trim().isEmpty) 'customer name',
       if (_customerContactController.text.trim().isEmpty) 'customer contact',
       if (_preferredVisitDate == null) 'preferred visit date',
@@ -356,8 +355,7 @@ class _SmartVisitPlannerDialogState extends State<SmartVisitPlannerDialog>
         notes: _internalNotesController.text.trim(),
         vehicleDetails: complaint?.vehicleModel.trim() ?? '',
         motorSerialNumber: complaint?.motorSerialNumber.trim() ?? '',
-        controllerSerialNumber:
-            complaint?.controllerSerialNumber.trim() ?? '',
+        controllerSerialNumber: complaint?.controllerSerialNumber.trim() ?? '',
         warrantyStatus: complaint?.warrantyStatus.trim().isNotEmpty == true
             ? complaint!.warrantyStatus.trim()
             : 'Unknown',
@@ -423,7 +421,10 @@ class _SmartVisitPlannerDialogState extends State<SmartVisitPlannerDialog>
           const PremiumIconChip(icon: Icons.alt_route_outlined),
           const SizedBox(width: 9),
           Expanded(
-            child: Text('Smart Visit Planner', style: AppTextStyles.headingSmall),
+            child: Text(
+              'Smart Visit Planner',
+              style: AppTextStyles.headingSmall,
+            ),
           ),
           IconButton(
             tooltip: 'Close planner',
@@ -445,7 +446,10 @@ class _SmartVisitPlannerDialogState extends State<SmartVisitPlannerDialog>
                 isScrollable: true,
                 tabAlignment: TabAlignment.start,
                 tabs: const [
-                  Tab(icon: Icon(Icons.edit_location_alt_outlined), text: 'Plan'),
+                  Tab(
+                    icon: Icon(Icons.edit_location_alt_outlined),
+                    text: 'Plan',
+                  ),
                   Tab(icon: Icon(Icons.engineering_outlined), text: 'Dispatch'),
                   Tab(icon: Icon(Icons.inventory_2_outlined), text: 'Package'),
                 ],
@@ -754,21 +758,25 @@ class _SmartVisitPlannerDialogState extends State<SmartVisitPlannerDialog>
                     style: AppTextStyles.caption,
                   )
                 else
-                  ...recommendations.take(8).map(
-                    (recommendation) => Padding(
-                      padding: const EdgeInsets.only(bottom: 7),
-                      child: _EngineerRecommendationTile(
-                        recommendation: recommendation,
-                        selected:
-                            recommendation.employee.uid == _selectedEngineerId,
-                        onTap: () {
-                          setState(() {
-                            _selectedEngineerId = recommendation.employee.uid;
-                          });
-                        },
+                  ...recommendations
+                      .take(8)
+                      .map(
+                        (recommendation) => Padding(
+                          padding: const EdgeInsets.only(bottom: 7),
+                          child: _EngineerRecommendationTile(
+                            recommendation: recommendation,
+                            selected:
+                                recommendation.employee.uid ==
+                                _selectedEngineerId,
+                            onTap: () {
+                              setState(() {
+                                _selectedEngineerId =
+                                    recommendation.employee.uid;
+                              });
+                            },
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -859,7 +867,10 @@ class _SmartVisitPlannerDialogState extends State<SmartVisitPlannerDialog>
                 _PackageRow('Complaint', _complaintSummaryController.text),
                 _PackageRow('Priority', _priority),
                 _PackageRow('Customer', _customerNameController.text),
-                _PackageRow('Customer Contact', _customerContactController.text),
+                _PackageRow(
+                  'Customer Contact',
+                  _customerContactController.text,
+                ),
                 _PackageRow(
                   'Preferred Visit',
                   _preferredVisitDate == null
@@ -966,13 +977,16 @@ class _PlannerGrid extends StatelessWidget {
         return Wrap(
           spacing: gap,
           runSpacing: gap,
-          children: children.map((child) {
-            final fullWidth = child is _PlannerTextField && child.spanFullWidth;
-            return SizedBox(
-              width: fullWidth ? constraints.maxWidth : itemWidth,
-              child: child,
-            );
-          }).toList(growable: false),
+          children: children
+              .map((child) {
+                final fullWidth =
+                    child is _PlannerTextField && child.spanFullWidth;
+                return SizedBox(
+                  width: fullWidth ? constraints.maxWidth : itemWidth,
+                  child: child,
+                );
+              })
+              .toList(growable: false),
         );
       },
     );
@@ -1260,7 +1274,9 @@ class _EngineerRecommendationTile extends StatelessWidget {
             color: selected ? color.withAlpha(15) : Colors.white.withAlpha(5),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-              color: selected ? color.withAlpha(100) : Colors.white.withAlpha(18),
+              color: selected
+                  ? color.withAlpha(100)
+                  : Colors.white.withAlpha(18),
             ),
           ),
           child: Row(
@@ -1402,9 +1418,7 @@ String _complaintIssueCategory(ComplaintModel? complaint) {
 String _employeeName(EmployeeModel employee) {
   if (employee.name.trim().isNotEmpty) return employee.name.trim();
   if (employee.email.trim().isNotEmpty) return employee.email.trim();
-  return employee.uid.length <= 8
-      ? employee.uid
-      : employee.uid.substring(0, 8);
+  return employee.uid.length <= 8 ? employee.uid : employee.uid.substring(0, 8);
 }
 
 String _employeeInitials(EmployeeModel employee) {
@@ -1412,7 +1426,9 @@ String _employeeInitials(EmployeeModel employee) {
   if (source.isEmpty) return '--';
   final parts = source.split(RegExp(r'\s+'));
   if (parts.length == 1) {
-    return parts.first.substring(0, parts.first.length >= 2 ? 2 : 1).toUpperCase();
+    return parts.first
+        .substring(0, parts.first.length >= 2 ? 2 : 1)
+        .toUpperCase();
   }
   return '${parts.first[0]}${parts.last[0]}'.toUpperCase();
 }

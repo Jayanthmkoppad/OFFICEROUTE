@@ -121,10 +121,7 @@ class ComplaintModel {
     required this.updatedAt,
   });
 
-  factory ComplaintModel.fromMap(
-    Map<String, dynamic> map, {
-    String id = '',
-  }) {
+  factory ComplaintModel.fromMap(Map<String, dynamic> map, {String id = ''}) {
     return ComplaintModel(
       id: id.isNotEmpty ? id : (map['id'] ?? ''),
       userId: map['userId'] ?? '',
@@ -207,8 +204,9 @@ class ComplaintModel {
       'vehicleConfiguration': vehicleConfiguration,
       'motorConfiguration': motorConfiguration,
       'controllerConfiguration': controllerConfiguration,
-      'purchaseDate':
-          purchaseDate == null ? null : Timestamp.fromDate(purchaseDate!),
+      'purchaseDate': purchaseDate == null
+          ? null
+          : Timestamp.fromDate(purchaseDate!),
       'invoiceNumber': invoiceNumber,
       'dealerName': dealerName,
       'dealerContactNumber': dealerContactNumber,
@@ -332,8 +330,7 @@ class ComplaintModel {
           controllerSerialNumber ?? this.controllerSerialNumber,
       batterySerialNumber: batterySerialNumber ?? this.batterySerialNumber,
       chargerSerialNumber: chargerSerialNumber ?? this.chargerSerialNumber,
-      vehicleConfiguration:
-          vehicleConfiguration ?? this.vehicleConfiguration,
+      vehicleConfiguration: vehicleConfiguration ?? this.vehicleConfiguration,
       motorConfiguration: motorConfiguration ?? this.motorConfiguration,
       controllerConfiguration:
           controllerConfiguration ?? this.controllerConfiguration,

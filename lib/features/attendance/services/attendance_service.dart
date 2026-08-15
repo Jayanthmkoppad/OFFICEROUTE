@@ -12,7 +12,10 @@ class AttendanceService {
   static Future<AttendanceModel?> fetchTodayAttendance(String userId) async {
     try {
       final now = DateTime.now();
-      return _fetchAttendanceForDay(userId, DateTime(now.year, now.month, now.day));
+      return _fetchAttendanceForDay(
+        userId,
+        DateTime(now.year, now.month, now.day),
+      );
     } catch (error, stackTrace) {
       _printAttendanceException(
         error: error,
@@ -144,10 +147,14 @@ class AttendanceService {
     required DateTime month,
   }) async {
     final records = await fetchAttendanceForUser(userId);
-    return records.where((record) {
-      final date = record.date;
-      return date != null && date.year == month.year && date.month == month.month;
-    }).toList(growable: false);
+    return records
+        .where((record) {
+          final date = record.date;
+          return date != null &&
+              date.year == month.year &&
+              date.month == month.month;
+        })
+        .toList(growable: false);
   }
 
   static Future<AttendanceModel> checkIn({
@@ -215,7 +222,7 @@ class AttendanceService {
       final breakMinutes = model.breakStartTime == null
           ? model.totalBreakMinutes
           : model.totalBreakMinutes +
-              now.difference(model.breakStartTime!).inMinutes;
+                now.difference(model.breakStartTime!).inMinutes;
       final updated = model.copyWith(
         status: 'Checked Out',
         checkOutTime: now,
@@ -274,7 +281,8 @@ class AttendanceService {
       final updated = model.copyWith(
         status: 'Checked In',
         totalBreakMinutes:
-            model.totalBreakMinutes + now.difference(model.breakStartTime!).inMinutes,
+            model.totalBreakMinutes +
+            now.difference(model.breakStartTime!).inMinutes,
         clearBreakStartTime: true,
         syncStatus: 'synced',
       );
@@ -295,7 +303,9 @@ class AttendanceService {
     String userId,
     DateTime day,
   ) async {
-    final dateTimestamp = Timestamp.fromDate(DateTime(day.year, day.month, day.day));
+    final dateTimestamp = Timestamp.fromDate(
+      DateTime(day.year, day.month, day.day),
+    );
 
     final snapshot = await _collection
         .where('userId', isEqualTo: userId)
@@ -315,7 +325,9 @@ class AttendanceService {
     required String method,
   }) {
     debugPrint('Attendance Firestore exception');
-    debugPrint('File: lib/features/attendance/services/attendance_service.dart');
+    debugPrint(
+      'File: lib/features/attendance/services/attendance_service.dart',
+    );
     debugPrint('Method: $method');
     debugPrint('Runtime type: ${error.runtimeType}');
 

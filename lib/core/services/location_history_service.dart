@@ -54,16 +54,14 @@ class LocationHistoryService {
     String sessionId,
   ) async {
     try {
-      final snapshot = await _pointsCollection(sessionId)
-          .orderBy('sequence')
-          .limit(1000)
-          .get();
+      final snapshot = await _pointsCollection(
+        sessionId,
+      ).orderBy('sequence').limit(1000).get();
 
       return snapshot.docs
-          .map((doc) => LocationHistoryPointModel.fromMap(
-                doc.data(),
-                id: doc.id,
-              ))
+          .map(
+            (doc) => LocationHistoryPointModel.fromMap(doc.data(), id: doc.id),
+          )
           .toList(growable: false);
     } catch (error, stackTrace) {
       _printLocationHistoryException(

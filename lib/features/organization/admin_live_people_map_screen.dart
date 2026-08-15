@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import '../../core/models/cab_trip_model.dart';
+import '../../core/models/cab_assignment_model.dart';
 import '../../core/models/live_location_model.dart';
 import '../../core/models/location_session_model.dart';
 import '../../core/models/user_model.dart';
@@ -13,8 +15,11 @@ import '../../core/services/cab_trip_service.dart';
 import '../../core/services/firestore_service.dart';
 import '../../core/services/live_location_service.dart';
 import '../../core/services/location_session_watch_service.dart';
+import '../../core/services/location_tracking_policy.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_text_styles.dart';
+import '../auth/services/auth_service.dart';
+import '../map/controllers/location_controller.dart';
 import 'admin_active_trip_detail_screen.dart';
 
 /// Administrator's all-people live map. Aggregates drivers, employees,
@@ -41,6 +46,8 @@ class _AdminLivePeopleMapScreenState extends State<AdminLivePeopleMapScreen> {
   StreamSubscription<List<LocationSessionModel>>? _sessionSub;
   StreamSubscription<void>? _tripSub;
   StreamSubscription<void>? _assignmentSub;
+  StreamSubscription? _ownTrackingSub;
+  LocationSessionModel? _ownSession;
   Timer? _reloadDebounce;
   Timer? _freshnessTicker;
 
@@ -48,6 +55,7 @@ class _AdminLivePeopleMapScreenState extends State<AdminLivePeopleMapScreen> {
   List<LocationSessionModel> _sessions = const [];
   Map<String, UserModel> _usersById = const {};
   List<CabTripModel> _trips = const [];
+  List<CabAssignmentModel> _assignments = const [];
   double _currentZoom = 12;
   _RoleFilter _role = _RoleFilter.all;
   _StatusFilter _status = _StatusFilter.any;
@@ -77,7 +85,7 @@ class _AdminLivePeopleMapScreenState extends State<AdminLivePeopleMapScreen> {
         _scheduleReload();
       },
     );
-    _freshnessTicker = Timer.periodic(const Duration(seconds: 15), (_) {
+    _freshnessTicker = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted) return;
       setState(() => _now = DateTime.now());
     });
@@ -93,6 +101,7 @@ class _AdminLivePeopleMapScreenState extends State<AdminLivePeopleMapScreen> {
     _reloadDebounce?.cancel();
     _freshnessTicker?.cancel();
     _mapController?.dispose();
+    _ownTrackingSub?.cancel();
     super.dispose();
   }
 
@@ -113,10 +122,14 @@ class _AdminLivePeopleMapScreenState extends State<AdminLivePeopleMapScreen> {
       final today = _todayKey();
       final users = await FirestoreService.fetchAllUsers();
       final trips = await CabTripService.fetchTripsForDate(dateKey: today);
+      final assignments = await CabAssignmentService.fetchAssignmentsForDate(
+        dateKey: today,
+      );
       if (!mounted) return;
       setState(() {
         _usersById = {for (final user in users) user.uid: user};
         _trips = trips;
+        _assignments = assignments;
         _loading = false;
         _error = null;
       });
@@ -143,6 +156,14 @@ class _AdminLivePeopleMapScreenState extends State<AdminLivePeopleMapScreen> {
 
   String _roleGroup(String rawRole) {
     final role = rawRole.trim().toLowerCase();
+    if (const {
+      'admin',
+      'administrator',
+      'application_owner',
+      'owner',
+    }.contains(role)) {
+      return 'administrator';
+    }
     if (role.contains('driver')) return 'driver';
     if (role.contains('engineer')) return 'engineer';
     return 'employee';
@@ -158,11 +179,21 @@ class _AdminLivePeopleMapScreenState extends State<AdminLivePeopleMapScreen> {
       ))
         trip.driverId: trip,
     };
+    final assignmentsById = <String, CabAssignmentModel>{
+      for (final assignment in _assignments) assignment.id: assignment,
+    };
     final points = <_PersonPoint>[];
     for (final location in _liveLocations) {
       if (!sessionUserIds.contains(location.userId)) continue;
       final user = _usersById[location.userId];
       if (user == null) continue;
+      final assignmentId = location.assignmentId?.trim() ?? '';
+      final assignment = assignmentsById[assignmentId];
+      if (assignment == null) continue;
+      final isAuthorizedParticipant =
+          assignment.driverId == location.userId ||
+          assignment.employeeIds.contains(location.userId);
+      if (!isAuthorizedParticipant) continue;
       final group = _roleGroup(user.role);
       final freshness = _freshnessFor(location);
       final activeTrip = tripsByDriver[user.uid];
@@ -173,6 +204,7 @@ class _AdminLivePeopleMapScreenState extends State<AdminLivePeopleMapScreen> {
           freshness: freshness,
           group: group,
           activeTrip: activeTrip,
+          assignment: assignment,
         ),
       );
     }
@@ -246,7 +278,8 @@ class _AdminLivePeopleMapScreenState extends State<AdminLivePeopleMapScreen> {
       position: LatLng(point.location.latitude, point.location.longitude),
       icon: BitmapDescriptor.defaultMarkerWithHue(_hueForPoint(point)),
       infoWindow: InfoWindow(
-        title: point.user.name.isEmpty ? point.user.uid : point.user.name,
+        title:
+            '${point.user.name.isEmpty ? point.user.uid : point.user.name} (${_titleCase(point.group)})',
         snippet:
             '${_titleCase(point.group)} · ${_freshnessLabel(point.freshness)}',
       ),
@@ -311,7 +344,7 @@ class _AdminLivePeopleMapScreenState extends State<AdminLivePeopleMapScreen> {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: Colors.transparent,
       builder: (context) => _MarkerDetailSheet(
         point: point,
         onOpenTrip: () {
@@ -363,7 +396,22 @@ class _AdminLivePeopleMapScreenState extends State<AdminLivePeopleMapScreen> {
             points.first.location.longitude,
           );
     return Scaffold(
-      appBar: AppBar(title: const Text('Live People Map')),
+      appBar: AppBar(
+        title: const Text('Live People Map'),
+        actions: [
+          IconButton(
+            tooltip: _ownSession == null
+                ? 'Share my location'
+                : 'Stop sharing location',
+            onPressed: _toggleOwnLocation,
+            icon: Icon(
+              _ownSession == null
+                  ? Icons.location_disabled_outlined
+                  : Icons.my_location,
+            ),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           _MapFilterBar(
@@ -406,6 +454,54 @@ class _AdminLivePeopleMapScreenState extends State<AdminLivePeopleMapScreen> {
           .length,
     };
   }
+
+  Future<void> _toggleOwnLocation() async {
+    try {
+      if (_ownSession != null) {
+        await _ownTrackingSub?.cancel();
+        _ownTrackingSub = null;
+        await LocationController.stopLocationSession(
+          session: _ownSession!,
+          stopReason: 'administrator_stopped_sharing',
+        );
+        if (mounted) setState(() => _ownSession = null);
+        return;
+      }
+      final uid = AuthService.currentUser?.uid;
+      if (uid == null || uid.isEmpty) {
+        throw StateError('Administrator is not authenticated.');
+      }
+      final session = await LocationController.startLocationSession(
+        userId: uid,
+        trackingReason: LocationTrackingPolicy.reasonFieldDuty,
+        metadata: const {'surface': 'admin_live_people_map'},
+      );
+      final subscription =
+          await LocationController.startForegroundLiveLocationUpdates(
+            session: session,
+            onLocation: (_) {},
+            onError: (error, stack) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Location update failed: $error')),
+              );
+            },
+          );
+      if (!mounted) {
+        await subscription.cancel();
+        return;
+      }
+      setState(() {
+        _ownSession = session;
+        _ownTrackingSub = subscription;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not share location: $error')),
+      );
+    }
+  }
 }
 
 enum _Freshness { online, stale, offline }
@@ -416,6 +512,7 @@ class _PersonPoint {
   final _Freshness freshness;
   final String group;
   final CabTripModel? activeTrip;
+  final CabAssignmentModel assignment;
 
   const _PersonPoint({
     required this.user,
@@ -423,6 +520,7 @@ class _PersonPoint {
     required this.freshness,
     required this.group,
     required this.activeTrip,
+    required this.assignment,
   });
 }
 
@@ -535,71 +633,86 @@ class _MarkerDetailSheet extends StatelessWidget {
     final coord =
         '${location.latitude.toStringAsFixed(5)}, ${location.longitude.toStringAsFixed(5)}';
     final ago = _humanAgo(location.updatedAt);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Container(
+          color: Theme.of(context).colorScheme.surface.withAlpha(225),
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              CircleAvatar(
-                radius: 22,
-                foregroundImage: user.profileImage.isEmpty
-                    ? null
-                    : NetworkImage(user.profileImage),
-                child: Text(
-                  user.name.isEmpty
-                      ? '?'
-                      : user.name.substring(0, 1).toUpperCase(),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      user.name.isEmpty ? user.uid : user.name,
-                      style: Theme.of(context).textTheme.titleMedium,
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 22,
+                    foregroundImage: user.profileImage.isEmpty
+                        ? null
+                        : NetworkImage(user.profileImage),
+                    child: Text(
+                      user.name.isEmpty
+                          ? '?'
+                          : user.name.substring(0, 1).toUpperCase(),
                     ),
-                    Text(
-                      '${_titleCase(point.group)} · ${user.branch.isEmpty ? '—' : user.branch}',
-                      style: AppTextStyles.caption,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${user.name.isEmpty ? user.uid : user.name} (${_titleCase(point.group)})',
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        Text(
+                          '${_titleCase(point.group)} · ${user.branch.isEmpty ? '—' : user.branch}',
+                          style: AppTextStyles.caption,
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  _StatusChip(freshness: point.freshness),
+                ],
               ),
-              _StatusChip(freshness: point.freshness),
+              const Divider(height: 20),
+              _row('Employee code', user.employeeCode),
+              _row('Phone', user.phone),
+              _row('Department', user.department),
+              if (point.group == 'driver') ...[
+                _row('Vehicle', point.assignment.vehicleId),
+                _row('Route status', point.assignment.status),
+                _row(
+                  'Trip status',
+                  point.activeTrip?.status ?? 'No active trip',
+                ),
+              ],
+              _row('Coordinates', coord),
+              _row(
+                'Accuracy',
+                location.accuracy <= 0
+                    ? '—'
+                    : '${location.accuracy.toStringAsFixed(1)} m',
+              ),
+              _row(
+                'Speed',
+                location.speed <= 0
+                    ? '—'
+                    : '${location.speed.toStringAsFixed(1)} m/s',
+              ),
+              _row('Last update', ago),
+              if (point.group == 'driver' && point.activeTrip != null) ...[
+                const SizedBox(height: 12),
+                FilledButton.icon(
+                  onPressed: onOpenTrip,
+                  icon: const Icon(Icons.route_outlined),
+                  label: const Text('Open Active Trip'),
+                ),
+              ],
             ],
           ),
-          const Divider(height: 20),
-          _row('Employee code', user.employeeCode),
-          _row('Phone', user.phone),
-          _row('Department', user.department),
-          _row('Coordinates', coord),
-          _row(
-            'Accuracy',
-            location.accuracy <= 0
-                ? '—'
-                : '${location.accuracy.toStringAsFixed(1)} m',
-          ),
-          _row(
-            'Speed',
-            location.speed <= 0
-                ? '—'
-                : '${location.speed.toStringAsFixed(1)} m/s',
-          ),
-          _row('Last update', ago),
-          if (point.group == 'driver' && point.activeTrip != null) ...[
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed: onOpenTrip,
-              icon: const Icon(Icons.route_outlined),
-              label: const Text('Open Active Trip'),
-            ),
-          ],
-        ],
+        ),
       ),
     );
   }

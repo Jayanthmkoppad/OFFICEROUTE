@@ -20,8 +20,7 @@ class ComplaintRegisterScreen extends StatefulWidget {
 class _ComplaintRegisterScreenState extends State<ComplaintRegisterScreen> {
   late Future<List<ComplaintModel>> _complaintsFuture;
 
-  final TextEditingController _customerNameController =
-      TextEditingController();
+  final TextEditingController _customerNameController = TextEditingController();
   final TextEditingController _customerIdController = TextEditingController();
   final TextEditingController _contactController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
@@ -41,8 +40,7 @@ class _ComplaintRegisterScreenState extends State<ComplaintRegisterScreen> {
       TextEditingController();
   final TextEditingController _chargerSerialController =
       TextEditingController();
-  final TextEditingController _purchaseDateController =
-      TextEditingController();
+  final TextEditingController _purchaseDateController = TextEditingController();
   final TextEditingController _invoiceController = TextEditingController();
   final TextEditingController _dealerController = TextEditingController();
   final TextEditingController _dealerContactController =
@@ -127,9 +125,9 @@ class _ComplaintRegisterScreenState extends State<ComplaintRegisterScreen> {
       });
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('GPS capture failed: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('GPS capture failed: $error')));
     } finally {
       if (mounted) {
         setState(() {
@@ -206,11 +204,15 @@ class _ComplaintRegisterScreenState extends State<ComplaintRegisterScreen> {
   }
 
   void _capturePhoto() {
-    _addPhotoReference('captured-photo-${DateTime.now().millisecondsSinceEpoch}.jpg');
+    _addPhotoReference(
+      'captured-photo-${DateTime.now().millisecondsSinceEpoch}.jpg',
+    );
   }
 
   void _selectPhotoFromGallery() {
-    _addPhotoReference('gallery-photo-${DateTime.now().millisecondsSinceEpoch}.jpg');
+    _addPhotoReference(
+      'gallery-photo-${DateTime.now().millisecondsSinceEpoch}.jpg',
+    );
   }
 
   void _addPhotoReference(String reference) {
@@ -226,11 +228,15 @@ class _ComplaintRegisterScreenState extends State<ComplaintRegisterScreen> {
   }
 
   void _recordVideo() {
-    _addVideoReference('recorded-video-${DateTime.now().millisecondsSinceEpoch}.mp4');
+    _addVideoReference(
+      'recorded-video-${DateTime.now().millisecondsSinceEpoch}.mp4',
+    );
   }
 
   void _selectVideo() {
-    _addVideoReference('selected-video-${DateTime.now().millisecondsSinceEpoch}.mp4');
+    _addVideoReference(
+      'selected-video-${DateTime.now().millisecondsSinceEpoch}.mp4',
+    );
   }
 
   void _addVideoReference(String reference) {
@@ -289,8 +295,7 @@ class _ComplaintRegisterScreenState extends State<ComplaintRegisterScreen> {
         chargerSerialNumber: _chargerSerialController.text.trim(),
         vehicleConfiguration: _vehicleConfigurationController.text.trim(),
         motorConfiguration: _motorConfigurationController.text.trim(),
-        controllerConfiguration:
-            _controllerConfigurationController.text.trim(),
+        controllerConfiguration: _controllerConfigurationController.text.trim(),
         purchaseDate: _parseDate(_purchaseDateController.text),
         invoiceNumber: _invoiceController.text.trim(),
         dealerName: _dealerController.text.trim(),
@@ -350,14 +355,14 @@ class _ComplaintRegisterScreenState extends State<ComplaintRegisterScreen> {
                 ? 'Complaint saved and visit linked.'
                 : 'Complaint saved. Visit link failed: $visitLinkError'
           : 'Complaint saved.';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     } catch (error) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Complaint save failed: $error')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Complaint save failed: $error')));
     } finally {
       if (mounted) {
         setState(() {
@@ -479,8 +484,7 @@ class _ComplaintRegisterScreenState extends State<ComplaintRegisterScreen> {
                         motorSerialController: _motorSerialController,
                         motorConfigurationController:
                             _motorConfigurationController,
-                        controllerSerialController:
-                            _controllerSerialController,
+                        controllerSerialController: _controllerSerialController,
                         controllerConfigurationController:
                             _controllerConfigurationController,
                         batterySerialController: _batterySerialController,
@@ -1105,12 +1109,15 @@ class _ComplaintHistoryCard extends StatelessWidget {
             )
           else
             Column(
-              children: complaints.take(6).map((complaint) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 10),
-                  child: _ComplaintTile(complaint: complaint),
-                );
-              }).toList(growable: false),
+              children: complaints
+                  .take(6)
+                  .map((complaint) {
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: _ComplaintTile(complaint: complaint),
+                    );
+                  })
+                  .toList(growable: false),
             ),
         ],
       ),
@@ -1314,11 +1321,7 @@ class _GpsCaptureRow extends StatelessWidget {
             child: constraints.maxWidth < 460
                 ? Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      details,
-                      const SizedBox(height: 12),
-                      button,
-                    ],
+                    children: [details, const SizedBox(height: 12), button],
                   )
                 : Row(
                     children: [
@@ -1558,15 +1561,8 @@ class _MediaPanel extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: children,
-            ),
-            if (preview != null) ...[
-              const SizedBox(height: 12),
-              preview!,
-            ],
+            Wrap(spacing: 8, runSpacing: 8, children: children),
+            if (preview != null) ...[const SizedBox(height: 12), preview!],
           ],
         ),
       ),
@@ -1754,10 +1750,10 @@ class _PremiumDropdown extends StatelessWidget {
       ),
       dropdownColor: AppColors.surface,
       items: options
-          .map((option) => DropdownMenuItem<String>(
-                value: option,
-                child: Text(option),
-              ))
+          .map(
+            (option) =>
+                DropdownMenuItem<String>(value: option, child: Text(option)),
+          )
           .toList(growable: false),
       onChanged: (value) {
         if (value != null) onChanged(value);

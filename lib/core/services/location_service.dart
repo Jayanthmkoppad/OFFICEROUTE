@@ -27,6 +27,10 @@ class LocationService {
       locationSettings: const LocationSettings(accuracy: LocationAccuracy.best),
     );
 
-    return LocationModel.fromPosition(pos.latitude, pos.longitude, pos.timestamp);
+    return LocationModel.fromPosition(
+      pos.latitude,
+      pos.longitude,
+      pos.timestamp,
+    );
   }
 }
